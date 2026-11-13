@@ -15,7 +15,7 @@ export default function TopBar({ onHome, onSettings, serverInfo, showSettings = 
               <Sparkles size={17} />
             </span>
             <span className="flex items-baseline gap-2">
-              <span className="text-[15px] font-semibold tracking-[-.01em] text-[var(--fg)]">无限创作</span>
+              <span className="text-[15px] font-semibold tracking-[-.01em] text-[var(--fg)]">短剧制作</span>
               <span className="rounded border border-[var(--line-strong)] px-1.5 py-0.5 font-mono text-[9.5px] tracking-[.16em] text-[var(--fg-3)]">STUDIO</span>
             </span>
           </button>
