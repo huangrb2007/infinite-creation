@@ -1,0 +1,60 @@
+# 打版本标签（如 v0.2.0）时自动构建 Windows 安装包，并发布到 GitHub Releases
+name: Windows 安装包
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（不带 v），手动运行时使用'
+        required: true
+        default: '0.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 版本号
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then v="${GITHUB_REF_NAME#v}"; else v="${{ github.event.inputs.version }}"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 安装 pnpm
+        run: npm install -g pnpm@11.7.0
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: 安装 NSIS
+        run: sudo apt-get update && sudo apt-get install -y nsis
+
+      - name: 构建安装包
+        run: bash packaging/windows/build.sh "${{ steps.ver.outputs.version }}"
+
+      - name: 发布到 Releases
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: 短剧制作 Studio ${{ steps.ver.outputs.version }}
+          files: dist/DuanjuStudio-Setup-${{ steps.ver.outputs.version }}.exe
+          body: |
+            Windows 安装包：下载 `DuanjuStudio-Setup-${{ steps.ver.outputs.version }}.exe`，双击安装，不需要管理员权限。
+            安装包未签名，Windows 提示「已保护你的电脑」时点「更多信息」→「仍要运行」。
+
+      - name: 上传构建产物（手动运行时）
+        if: github.event_name != 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: DuanjuStudio-Setup-${{ steps.ver.outputs.version }}
+          path: dist/DuanjuStudio-Setup-${{ steps.ver.outputs.version }}.exe
