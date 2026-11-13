@@ -379,7 +379,7 @@ export default function ProjectsPage({ onOpen, type = '', showTypeFilter = false
       <section className="flex flex-wrap items-end justify-between gap-5">
         <div>
           <p className="eyebrow">Workspace</p>
-          <h1 className="display-title mt-2">{type === 'agent' ? 'Agent无限创作' : '作品集'}</h1>
+          <h1 className="display-title mt-2">{type === 'agent' ? '短剧制作' : '作品集'}</h1>
           <p className="mt-2 max-w-xl text-[13px] leading-relaxed text-[var(--fg-3)]">
             {type === 'agent'
               ? '一段小说交给 Agent，拆章节、建素材、写分镜、出视频。所有项目与经典界面共用同一份数据。'
@@ -766,7 +766,7 @@ function ProjectCard({ project: p, showType, onOpen, onDelete }) {
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate text-[14px] font-medium text-[var(--fg)]">{p.name}</span>
             {showType ? (
-              <Badge className="shrink-0">{PROJECT_TYPE_LABEL[p.type] || p.type || 'Agent无限创作'}</Badge>
+              <Badge className="shrink-0">{PROJECT_TYPE_LABEL[p.type] || p.type || '短剧制作'}</Badge>
             ) : null}
           </div>
           <div className="flex items-center justify-between gap-2">

@@ -15,6 +15,7 @@ function redactConfig(cfg) {
     ...cfg,
     comfyui: { ...(cfg.comfyui || {}), apiKey: '' },
     llm: { ...(cfg.llm || {}), apiKey: '' },
+    catalog: { ...(cfg.catalog || {}), pool: { ...(cfg.catalog?.pool || {}), key: '' } },
   };
 }
 
@@ -30,7 +31,7 @@ export async function PUT(req) {
   const body = await req.json().catch(() => null);
   // PUT 是整段覆盖：空对象 / 空请求体会把密钥与全部配置写成默认值。
   // 前端两个设置界面都会提交完整配置，所以这里拒绝明显错误的空载荷。
-  const SECTIONS = ['server', 'comfyui', 'llm', 'hardware', 'generation', 'workflows', 'features', 'debug'];
+  const SECTIONS = ['server', 'comfyui', 'llm', 'hardware', 'generation', 'workflows', 'features', 'debug', 'catalog'];
   if (!body || typeof body !== 'object' || Array.isArray(body) || !SECTIONS.some((k) => k in body)) {
     return NextResponse.json({ error: '配置内容为空，已拒绝写入' }, { status: 400 });
   }

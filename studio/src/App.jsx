@@ -20,7 +20,7 @@ import { useServerInfo } from './lib/hooks.js';
 const MENU = [
   { id: 'projects', label: '作品集', icon: LayoutGrid },
   { id: 'novel', label: '无限・卷轴', icon: Feather, beta: true },
-  { id: 'agent', label: 'Agent无限创作', icon: Sparkles },
+  { id: 'agent', label: '短剧制作', icon: Sparkles },
   { id: 'opuscar', label: '无限・秩影', icon: Clapperboard },
   { id: 'digital_human', label: '数字人', icon: UserRound },
   { id: 'image', label: '图片生成', icon: ImageIcon },
@@ -86,12 +86,12 @@ export default function App() {
     };
   }, []);
 
-  const title = (MENU.find((m) => m.id === state.mode) || {}).label || '无限创作 Studio';
+  const title = (MENU.find((m) => m.id === state.mode) || {}).label || '短剧制作 Studio';
 
   useEffect(() => {
-    if (state.view.type === 'project') document.title = '项目 · 无限创作 Studio';
-    else if (state.view.type === 'settings') document.title = '设置 · 无限创作 Studio';
-    else document.title = title + ' · 无限创作 Studio';
+    if (state.view.type === 'project') document.title = '项目 · 短剧制作 Studio';
+    else if (state.view.type === 'settings') document.title = '设置 · 短剧制作 Studio';
+    else document.title = title + ' · 短剧制作 Studio';
   }, [state, title]);
 
   const go = (v) => {
@@ -220,12 +220,12 @@ export default function App() {
             {publicMode ? (
               <>
                 <span>托管服务 · 数据由服务端统一保存</span>
-                <span>无限创作 Studio</span>
+                <span>短剧制作 Studio</span>
               </>
             ) : (
               <>
                 <span className="flex flex-wrap items-center gap-2">
-                  无限创作 Studio · 小说到成片的一站式 AI 创作平台
+                  短剧制作 Studio · 小说到短剧成片的 AI 制作工作台
                   <a
                     href="https://github.com/SwotAtmk/infinite-creation"
                     target="_blank"

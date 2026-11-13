@@ -370,7 +370,7 @@ export default function NovelPage({ onOpenAgentProject }) {
             <Button variant="ghost" size="sm" onClick={() => setSelected(null)}>← 返回列表</Button>
             <Button variant="ghost" size="sm" onClick={openEditInfo}><Feather size={12} />编辑信息</Button>
             {running ? <Button variant="ghost" size="sm" onClick={stopJob}><Square size={12} />停止生成</Button> : null}
-            <Button size="sm" onClick={importToAgent} title="把当前小说的章节正文、大纲、角色设定迁移到 Agent 无限创作，开始生成视频">
+            <Button size="sm" onClick={importToAgent} title="把当前小说的章节正文、大纲、角色设定迁移到短剧制作，开始生成视频">
               <Sparkles size={12} />小说转视频
             </Button>
           </div>

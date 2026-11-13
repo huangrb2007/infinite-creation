@@ -21,7 +21,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 agent.log
-plan/
+/plan/
 .tmp
 .tmp-*
 temp_reference/
