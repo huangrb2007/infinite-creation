@@ -7,6 +7,7 @@ import {
   Cloud,
   Cpu,
   Film,
+  Layers,
   Lock,
   Save,
   Server,
@@ -35,6 +36,7 @@ import PageHeader from '../components/PageHeader.jsx';
 import SkillsPanel from '../components/SkillsPanel.jsx';
 import SkillPipelinePanel from '../components/SkillPipelinePanel.jsx';
 import SubtitlePanel from '../components/SubtitlePanel.jsx';
+import WorkflowCatalogPanel from '../components/WorkflowCatalogPanel.jsx';
 import { useToast } from '../components/toast.jsx';
 
 const PROVIDER_OPTIONS = COMFY_PROVIDERS.map((p) => ({ value: p.id, label: p.label }));
@@ -49,6 +51,7 @@ const REWRITE_LANG_OPTIONS = [
 const CATEGORIES = [
   { id: 'general', label: '通用配置', desc: '分镜数量 · 任务调度', icon: SlidersHorizontal },
   { id: 'comfyui', label: 'ComfyUI 服务', desc: '执行端 · 并发队列', icon: Server },
+  { id: 'workflows', label: '工作流', desc: '云端 · 号池 · 按类别选用', icon: Layers },
   { id: 'llm', label: 'LLM 模型', desc: 'Agent 大脑 · 提示词改写', icon: Sparkles },
   { id: 'subtitle', label: '字幕与语音识别', desc: 'Whisper 模型 · 本地环境', icon: Captions },
   { id: 'agent', label: 'Agent 运行时', desc: '内置 / 外部 CLI · MCP 桥', icon: Bot },
@@ -515,6 +518,8 @@ export default function SettingsPage({ onBack, publicMode = false }) {
               </Section>
             </>
           ) : null}
+
+          {active === 'workflows' ? <WorkflowCatalogPanel cfg={cfg} setCfg={setCfg} Section={Section} /> : null}
 
           {active === 'comfyui' ? (
             <Section icon={Server} title="ComfyUI 服务" description="生成图片与视频的执行端">

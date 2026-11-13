@@ -23,7 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import { api, uploadBinary } from '../lib/api.js';
-import { SKILL_PIPELINE_NODES, defaultSkillPipeline } from '@shared';
+import { SKILL_PIPELINE_NODES, defaultSkillPipeline, skillMeta, SKILL_MODE_LABEL } from '@shared';
 import { Button, SearchInput, Spinner, Switch } from './ui.jsx';
 import { useToast } from './toast.jsx';
 
@@ -62,6 +62,10 @@ export default function SkillPipelinePanel({ cfg, setCfg, setSavedCfg, onlyNode 
   // 技能选择框：搜索词 + 是否展开（同一时刻只可能有一个气泡，共用一份状态即可）
   const [pickerOpen, setPickerOpen] = useState(false);
   const [query, setQuery] = useState('');
+  // 选择框里默认只列出适用于当前环节、能在全自动流水线里用的技能；「显示全部」展开其余
+  const [showAll, setShowAll] = useState(false);
+  // 鼠标停在哪个技能上：在列表下方显示它的完整说明
+  const [peek, setPeek] = useState('');
   const [links, setLinks] = useState([]);
   const [cols, setCols] = useState(metas.length);
   const wrapRef = useRef(null);
@@ -286,22 +290,32 @@ export default function SkillPipelinePanel({ cfg, setCfg, setSavedCfg, onlyNode 
     }
   }
 
+  const descOf = useMemo(() => Object.fromEntries(skills.map((s) => [s.name, s.description || ''])), [skills]);
+
   const addOptionsFor = useMemo(() => {
     return (id) => {
       const cur = new Set(Array.isArray(nodes[id]?.skills) ? nodes[id].skills : []);
       return skills
         .filter((s) => !cur.has(s.name))
-        .map((s) => ({ value: s.name, label: s.name + (s.description ? ' · ' + String(s.description).slice(0, 26) : ''), desc: s.description || '' }));
+        .map((s) => {
+          const m = skillMeta(s.name);
+          const fits = m.stages.includes(id);
+          return { value: s.name, zh: m.zh, mode: m.mode, fits, desc: s.description || '' };
+        })
+        // 适用于本环节的排前面；同组内「可全自动」优先
+        .sort((a, b) => Number(b.fits) - Number(a.fits) || Number(b.mode === 'auto') - Number(a.mode === 'auto') || a.value.localeCompare(b.value));
     };
   }, [skills, nodes]);
 
-  // 当前气泡里可添加的技能，按输入的名字/描述实时过滤
+  // 当前气泡里可添加的技能：输入关键字时搜全部（名字/中文说明/原描述），否则按环节过滤
+  const pickerAll = useMemo(() => addOptionsFor(openId) || [], [addOptionsFor, openId]);
   const pickerOptions = useMemo(() => {
-    const list = addOptionsFor(openId) || [];
     const q = query.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter((o) => o.value.toLowerCase().includes(q) || String(o.desc || '').toLowerCase().includes(q));
-  }, [addOptionsFor, openId, query]);
+    if (q) return pickerAll.filter((o) => o.value.toLowerCase().includes(q) || o.zh.toLowerCase().includes(q) || o.desc.toLowerCase().includes(q));
+    if (showAll) return pickerAll;
+    return pickerAll.filter((o) => o.fits && o.mode !== 'other' && o.mode !== 'interactive');
+  }, [pickerAll, query, showAll]);
+  const hiddenCount = pickerAll.length - pickerOptions.length;
 
   return (
     <div className="flex flex-col gap-4">
@@ -505,9 +519,13 @@ export default function SkillPipelinePanel({ cfg, setCfg, setSavedCfg, onlyNode 
                             list.map((s, idx) => (
                               <div key={s + idx} className="flex items-center gap-1 rounded-md border border-[var(--line)] bg-black/25 px-1.5 py-1">
                                 <span className="h-1 w-1 shrink-0 rounded-full bg-[color-mix(in_srgb,var(--accent)_70%,transparent)]" />
-                                <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-[var(--fg-2)]" title={s}>
-                                  {s}
+                                <span className="flex min-w-0 flex-1 flex-col" title={descOf[s] || s}>
+                                  <span className="truncate font-mono text-[10.5px] text-[var(--fg-2)]">{s}</span>
+                                  {skillMeta(s).zh ? <span className="truncate text-[9.5px] text-[var(--fg-4)]">{skillMeta(s).zh}</span> : null}
                                 </span>
+                                {skillMeta(s).mode === 'interactive' ? (
+                                  <span className="shrink-0 rounded px-1 text-[8.5px] text-[var(--danger)]" title="这个技能会要求停下来问用户，全自动流水线里不推荐">需确认</span>
+                                ) : null}
                                 <button
                                   type="button"
                                   aria-label="上移"
@@ -556,33 +574,52 @@ export default function SkillPipelinePanel({ cfg, setCfg, setSavedCfg, onlyNode 
                                 setQuery('');
                               }}
                             >
-                              <SearchInput value={query} onChange={setQuery} placeholder="按名字搜索技能…" className="mb-1.5" />
-                              <div className="max-h-[168px] overflow-auto">
+                              <SearchInput value={query} onChange={setQuery} placeholder="搜索名字或用途…" className="mb-1.5" />
+                              <div className="max-h-[200px] overflow-auto" onMouseLeave={() => setPeek('')}>
                                 {pickerOptions.length ? (
                                   pickerOptions.map((o) => (
                                     <button
                                       key={o.value}
                                       type="button"
+                                      onMouseEnter={() => setPeek(o.value)}
+                                      onFocus={() => setPeek(o.value)}
                                       onClick={() => {
                                         addSkill(meta.id, o.value);
                                         setQuery('');
                                       }}
-                                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-white/[0.06]"
+                                      className="flex w-full flex-col items-stretch gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-white/[0.06]"
                                     >
-                                      <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-[var(--fg-2)]">{o.value}</span>
-                                      {!query && o.desc ? (
-                                        <span className="max-w-[45%] shrink-0 truncate text-[9.5px] text-[var(--fg-4)]">{o.desc}</span>
-                                      ) : null}
+                                      <span className="flex min-w-0 items-center gap-1.5">
+                                        <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-[var(--fg-2)]">{o.value}</span>
+                                        {o.mode !== 'auto' ? (
+                                          <span className={'shrink-0 text-[8.5px] ' + (o.mode === 'interactive' ? 'text-[var(--danger)]' : 'text-[var(--fg-4)]')}>
+                                            {SKILL_MODE_LABEL[o.mode]}
+                                          </span>
+                                        ) : null}
+                                      </span>
+                                      <span className="truncate text-[10px] text-[var(--fg-3)]">{o.zh || o.desc || '（没有说明）'}</span>
                                     </button>
                                   ))
                                 ) : (
                                   <p className="m-0 px-2 py-2 text-center text-[10.5px] text-[var(--fg-4)]">
-                                    {query ? '没有匹配的技能' : '技能库已全部加入'}
+                                    {query ? '没有匹配的技能' : '适用于这一环节的技能已全部加入'}
                                   </p>
                                 )}
                               </div>
+                              {peek && descOf[peek] ? (
+                                <p className="m-0 mt-1.5 max-h-[96px] overflow-auto rounded-md border border-[var(--line)] bg-black/30 px-2 py-1.5 text-[10px] leading-relaxed text-[var(--fg-3)]">
+                                  {descOf[peek]}
+                                </p>
+                              ) : null}
                               <div className="mt-1 flex items-center justify-between px-1">
-                                <span className="text-[9.5px] text-[var(--fg-4)]">{pickerOptions.length} 个可选</span>
+                                <span className="flex items-center gap-2 text-[9.5px] text-[var(--fg-4)]">
+                                  {pickerOptions.length} 个可选
+                                  {!query && (hiddenCount > 0 || showAll) ? (
+                                    <button type="button" className="text-[var(--accent)] hover:underline" onClick={() => setShowAll((v) => !v)}>
+                                      {showAll ? '只看适用的' : '显示全部（+' + hiddenCount + '）'}
+                                    </button>
+                                  ) : null}
+                                </span>
                                 <button
                                   type="button"
                                   onClick={() => {
