@@ -564,6 +564,30 @@ export default function SettingsPage({ onBack, publicMode = false }) {
                     </div>
                   </Field>
                   <TestResult text={test} />
+                  {!/^(?:https?:\/\/)?(?:127\.0\.0\.1|localhost|\[::1\]|0\.0\.0\.0)(?::|\/|$)/i.test(cfg.comfyui.baseUrl || '') ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="同时进行的流水线" hint="云端 ComfyUI 不占本机显存：下一章写剧本/分镜时，上一章可以同时出片。">
+                        <Input
+                          type="number"
+                          min={1}
+                          max={8}
+                          value={String(cfg.generation?.cloudJobConcurrency ?? 2)}
+                          onChange={(e) => setCfg({ ...cfg, generation: { ...cfg.generation, cloudJobConcurrency: Math.max(1, Math.min(8, Math.round(Number(e.target.value) || 1))) } })}
+                          className="w-28"
+                        />
+                      </Field>
+                      <Field label="预先提交的渲染数" hint="云端 ComfyUI 仍是一条一条跑；多交一条可以省掉两条之间的上传与提交空档。">
+                        <Input
+                          type="number"
+                          min={1}
+                          max={6}
+                          value={String(cfg.generation?.cloudRenderConcurrency ?? 2)}
+                          onChange={(e) => setCfg({ ...cfg, generation: { ...cfg.generation, cloudRenderConcurrency: Math.max(1, Math.min(6, Math.round(Number(e.target.value) || 1))) } })}
+                          className="w-28"
+                        />
+                      </Field>
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <>
