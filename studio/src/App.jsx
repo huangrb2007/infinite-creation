@@ -227,16 +227,16 @@ export default function App() {
                 <span className="flex flex-wrap items-center gap-2">
                   短剧制作 Studio · 小说到短剧成片的 AI 制作工作台
                   <a
-                    href="https://github.com/SwotAtmk/infinite-creation"
+                    href="https://github.com/huangrb2007/infinite-creation"
                     target="_blank"
                     rel="noreferrer"
                     aria-label="GitHub"
                     className="flex items-center gap-1.5 text-[var(--fg-4)] no-underline transition-colors hover:text-[var(--fg)]"
                     style={{ marginLeft: 10, fontSize: 13 }}
-                    title="SwotAtmk/infinite-creation"
+                    title="huangrb2007/infinite-creation（基于 SwotAtmk/infinite-creation）"
                   >
                     <Github size={18} />
-                    <span>SwotAtmk/infinite-creation</span>
+                    <span>huangrb2007/infinite-creation</span>
                   </a>
                 </span>
                 <span>内容由 AI 生成，请遵守平台规范与当地法律法规</span>

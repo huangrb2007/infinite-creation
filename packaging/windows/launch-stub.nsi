@@ -5,6 +5,7 @@ SilentInstall silent
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 OutFile "${OUTFILE}"
+Icon "icon.ico"
 Name "短剧制作 Studio"
 VIProductVersion "${VERSION}.0"
 VIAddVersionKey "ProductName" "短剧制作 Studio"

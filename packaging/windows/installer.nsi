@@ -30,6 +30,8 @@ VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "ProductVersion" "${VERSION}"
 VIAddVersionKey "LegalCopyright" "MIT · 基于 SwotAtmk/infinite-creation"
 
+!define MUI_ICON "icon.ico"
+!define MUI_UNICON "icon.ico"
 !define MUI_ABORTWARNING
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_TEXT "立即启动 ${APPNAME}"

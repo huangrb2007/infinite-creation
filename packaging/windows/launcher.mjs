@@ -79,6 +79,7 @@ const CONFIG = path.join(DATA, 'config.json');
 
 const env = {
   ...process.env,
+  IC_ROOT: APP,
   NODE_ENV: 'production',
   IC_DATA_DIR: path.join(DATA, 'data'),
   IC_CONFIG: CONFIG,
@@ -118,7 +119,23 @@ if (!(await waitPort(BACKEND_PORT, 180_000))) {
   shutdown(1);
 } else {
   start('web', ['scripts/serve-web.mjs'], { PORT: String(WEB_PORT), STUDIO_BACKEND: 'http://127.0.0.1:' + BACKEND_PORT, WEB_MODE: 'studio' });
-  if (await waitPort(WEB_PORT, 30_000)) openBrowser(URL_WEB);
+  if (await waitPort(WEB_PORT, 30_000)) {
+    openBrowser(URL_WEB);
+    startTray();
+  }
+}
+
+// Windows 托盘图标：双击打开界面，右键「退出」停止全部服务
+function startTray() {
+  if (process.platform !== 'win32') return;
+  const script = path.join(APP, 'packaging', 'tray.ps1');
+  if (!fs.existsSync(script)) return;
+  const tray = spawn('powershell.exe', [
+    '-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-STA', '-File', script,
+    '-Url', URL_WEB, '-ControlPort', String(CONTROL_PORT), '-Icon', path.join(APP, 'packaging', 'icon.ico'), '-LogDir', LOGS,
+  ], { stdio: 'ignore', windowsHide: true });
+  tray.on('error', (e) => log('tray failed', e.message));
+  children.push(tray);
 }
 
 process.on('SIGINT', () => shutdown(0));

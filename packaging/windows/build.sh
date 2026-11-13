@@ -15,6 +15,10 @@ cd "$ROOT"
 pnpm install --frozen-lockfile
 (cd studio && pnpm build)
 NODE_ENV=production NODE_OPTIONS=--max-old-space-size=6144 pnpm build
+# 检查：构建产物里不能有固化的构建机路径（file:///home/... 在 Windows 上会让接口 500）
+if grep -rl "file://$ROOT" .next/server >/dev/null 2>&1; then
+  echo "构建产物里固化了构建机路径：" && grep -rl "file://$ROOT" .next/server && exit 1
+fi
 
 echo "[2/5] 拷贝程序文件"
 cd "$STAGE/app"
@@ -26,7 +30,7 @@ cp "$ROOT/scripts/serve-web.mjs" scripts/
 cp -r "$ROOT/scripts/subtitle" scripts/ 2>/dev/null || true
 cp -r "$ROOT/vendor/openclaude/dist" "$ROOT/vendor/openclaude/package.json" vendor/openclaude/
 (cd "$ROOT/.next" && tar cf - --exclude=./cache .) | (cd .next && tar xf -)
-cp "$ROOT/packaging/windows/launcher.mjs" packaging/
+cp "$ROOT/packaging/windows/launcher.mjs" "$ROOT/packaging/windows/tray.ps1" "$ROOT/packaging/windows/icon.ico" packaging/
 
 echo "[3/5] 安装 Windows 版运行依赖（版本与本地构建一致）"
 node -e "

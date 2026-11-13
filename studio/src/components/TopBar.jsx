@@ -20,16 +20,16 @@ export default function TopBar({ onHome, onSettings, serverInfo, showSettings = 
             </span>
           </button>
           <a
-            href="https://github.com/SwotAtmk/infinite-creation"
+            href="https://github.com/huangrb2007/infinite-creation"
             target="_blank"
             rel="noreferrer"
             aria-label="GitHub"
             className="flex items-center gap-1.5 text-[var(--fg-3)] no-underline transition-colors hover:text-[var(--fg)]"
             style={{ marginLeft: 10, fontSize: 13 }}
-            title="SwotAtmk/infinite-creation"
+            title="huangrb2007/infinite-creation（基于 SwotAtmk/infinite-creation）"
           >
             <Github size={18} />
-            <span className="hidden sm:inline">SwotAtmk/infinite-creation</span>
+            <span className="hidden sm:inline">huangrb2007/infinite-creation</span>
           </a>
         </div>
 
