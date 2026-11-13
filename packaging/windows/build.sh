@@ -15,9 +15,9 @@ cd "$ROOT"
 pnpm install --frozen-lockfile
 (cd studio && pnpm build)
 NODE_ENV=production NODE_OPTIONS=--max-old-space-size=6144 pnpm build
-# 检查：构建产物里不能有固化的构建机路径（file:///home/... 在 Windows 上会让接口 500）
-if grep -rl "file://$ROOT" .next/server >/dev/null 2>&1; then
-  echo "构建产物里固化了构建机路径：" && grep -rl "file://$ROOT" .next/server && exit 1
+# 检查：Agent 内核不能被打进产物（它内部的 import.meta.url 会被固化成构建机路径，Windows 上直接报错）
+if grep -rl "file://$ROOT/vendor" .next/server >/dev/null 2>&1; then
+  echo "Agent 内核被打包进了 .next，构建机路径会被固化：" && grep -rl "file://$ROOT/vendor" .next/server && exit 1
 fi
 
 echo "[2/5] 拷贝程序文件"
