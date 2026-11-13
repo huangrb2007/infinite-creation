@@ -21,3 +21,4 @@ __pycache__/
 .venv/
 # 测试素材（本地使用，不入库）
 docs/test/
+dist/
