@@ -121,3 +121,24 @@ test('界面格式转换：子图展开、Primitive、Reroute、静音节点', (
   assert.deepStrictEqual(prompt['4'].inputs.text, ['3:7', 0]);
   assert.strictEqual(prompt['4'].inputs.filename_prefix, 'out');
 });
+
+test('Zealman 选参考节点：参考图写进 ref_image_N 字段，没用到的清空', () => {
+  const wf = {
+    403: { class_type: 'ZealmanH3PickReferenceMedia', inputs: { prompt: 'p', seconds: 10, aspect_ratio: '16:9 (Widescreen)', ref_image_0: 'a.png', ref_image_1: 'b.png' } },
+    265: { class_type: 'MiniMaxH3ReferenceToVideo', inputs: { prompt: ['403', 0] } },
+    397: { class_type: 'SelfLiftH3Sampler', inputs: { seed: 1, positive: ['265', 0] } },
+    364: { class_type: 'VHS_VideoCombine', inputs: { filename_prefix: 'x', images: ['397', 0] } },
+  };
+  const a = analyzeApiWorkflow(wf, { category: 'r2v' });
+  assert.strictEqual(a.family, 'Zealman H3 选参考');
+  assert.deepStrictEqual(a.roles.positive_prompt, { node: '403', field: 'prompt' });
+  const built = buildWorkflow({ ...a, id: 't', template: wf, outputs: a.outputs }, {
+    positive_prompt: 'new', seconds: 6, aspect_ratio: '9:16',
+    references: [{ type: 'image', filename: 'c.png' }],
+  });
+  assert.strictEqual(built['403'].inputs.prompt, 'new');
+  assert.strictEqual(built['403'].inputs.aspect_ratio, '9:16 (Portrait Widescreen)');
+  assert.strictEqual(built['403'].inputs.ref_image_0, 'c.png');
+  assert.strictEqual(built['403'].inputs.ref_image_1, '');
+  assert.ok(built['364']);
+});
