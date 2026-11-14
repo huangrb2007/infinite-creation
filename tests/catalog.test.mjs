@@ -327,3 +327,53 @@ test('号池素材口只认 fieldType 为 IMAGE/AUDIO/VIDEO 的字段，ref_imag
   assert.deepStrictEqual(spec.slots.image.map((s) => s.node), ['136__story_image_0']);
   assert.deepStrictEqual(spec.slots.audio.map((s) => s.node), ['136__story_audio_0']);
 });
+
+test('LLM 接口视频 / 音乐模型按类别归类，请求体按站点格式拼', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { apiMediaSpecs, buildVideoBody, videoFamily, apiRefPrompt } = await import('../lib/core/catalog/api-media.js');
+  const { apiImageSpecs } = await import('../lib/core/catalog/api-image.js');
+  const models = [
+    { id: 'MiniMax-H3', kind: 'video' }, { id: 'seedance-2.0-mini-multi', kind: 'video' }, { id: 'kling-o3-std-r2v', kind: 'video' },
+    { id: 'hailuo-2.3-i2v-pro', kind: 'video' }, { id: 'seedance-2.0-mini-t2v', kind: 'video' }, { id: 'kling-v3.0-std-motion', kind: 'video' },
+    { id: 'workfisher-upscaler', kind: 'video' }, { id: 'mureka-v9-bgm', kind: 'audio' }, { id: 'suno-generation', kind: 'audio' },
+    { id: 'seedream-v5-pro-t2i', kind: 'image' }, { id: 'seedream-v5-pro-i2i', kind: 'image' }, { id: 'midjourney-imagine', kind: 'image' },
+  ];
+  const specs = apiMediaSpecs({ llm: { models } });
+  const cat = (c) => specs.filter((s) => s.category === c).map((s) => s.name + (s.ready ? '' : '?'));
+  assert.deepStrictEqual(cat('r2v'), ['MiniMax-H3', 'seedance-2.0-mini-multi', 'kling-o3-std-r2v', 'hailuo-2.3-i2v-pro?', 'seedance-2.0-mini-t2v?']);
+  assert.deepStrictEqual(cat('motion'), ['kling-v3.0-std-motion']);
+  assert.deepStrictEqual(cat('digital_human'), ['MiniMax-H3']);
+  assert.deepStrictEqual(cat('music'), ['mureka-v9-bgm', 'suno-generation']);
+  const img = apiImageSpecs({ llm: { models } });
+  assert.deepStrictEqual(img.map((s) => s.category + ':' + s.name), ['t2i:seedream-v5-pro-t2i', 'i2i:seedream-v5-pro-i2i']);
+  assert.strictEqual(videoFamily('hailuo-2.3-t2v-standard'), 't2v');
+  assert.strictEqual(apiRefPrompt('__MINIMAX_H3_REF_1__ 说话，音色 __MINIMAX_H3_REF_2__，场景 __MINIMAX_H3_REF_3__', [{ type: 'image' }, { type: 'audio' }, { type: 'image' }]), '@Image 1 说话，音色 @Audio 1，场景 @Image 2');
+
+  // 参考素材是「本地文件」标记，拼请求体时上传换直链
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ic-api-'));
+  const a = path.join(dir, 'a.png'); fs.writeFileSync(a, 'x');
+  const b = path.join(dir, 'b.wav'); fs.writeFileSync(b, 'y');
+  const lazy = (p) => '@@ic-local:' + JSON.stringify([p, path.basename(p)]);
+  const orig = globalThis.fetch;
+  let n = 0;
+  globalThis.fetch = async () => new Response(JSON.stringify({ url: 'https://cdn/' + (++n) }), { status: 200 });
+  try {
+    const cfg = { llm: { baseUrl: 'http://h/v1' } };
+    const refs = [{ type: 'image', filename: lazy(a) }, { type: 'audio', filename: lazy(b) }];
+    const h3 = await buildVideoBody(cfg, specs.find((s) => s.name === 'MiniMax-H3' && s.category === 'r2v'), { positive_prompt: '__MINIMAX_H3_REF_1__', seconds: 11, resolution: '720P', aspect_ratio: '9:16', references: refs });
+    assert.strictEqual(h3.duration, 11);
+    assert.strictEqual(h3.resolution, '768P');
+    assert.deepStrictEqual(h3.metadata.h3_request.content.map((c) => c.role || c.type), ['text', 'reference_image', 'reference_audio']);
+    assert.strictEqual(h3.metadata.h3_request.ratio, '9:16');
+    const dh = await buildVideoBody(cfg, specs.find((s) => s.category === 'digital_human'), { positive_prompt: 'x', seconds: 30, references: refs });
+    assert.deepStrictEqual(dh.metadata.h3_request.content.map((c) => c.role || c.type), ['text', 'reference_image', 'drive_audio']);
+    assert.strictEqual(dh.metadata.h3_request.audio_control.mode, 'lock_source');
+    const multi = await buildVideoBody(cfg, specs.find((s) => s.name === 'seedance-2.0-mini-multi'), { positive_prompt: 'x', seconds: 5, resolution: '480P', references: refs });
+    assert.deepStrictEqual(multi.metadata.content.map((c) => c.type), ['image_url', 'audio_url']);
+    assert.strictEqual(multi.seconds, '5');
+    const r2v = await buildVideoBody(cfg, specs.find((s) => s.name === 'kling-o3-std-r2v'), { positive_prompt: 'x', seconds: 5, references: refs });
+    assert.strictEqual(r2v.images.length, 1);
+  } finally { globalThis.fetch = orig; }
+});
