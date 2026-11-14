@@ -142,3 +142,26 @@ test('Zealman 选参考节点：参考图写进 ref_image_N 字段，没用到�
   assert.strictEqual(built['403'].inputs.ref_image_1, '');
   assert.ok(built['364']);
 });
+
+test('LLM 接口的图片模型出现在文生图 / 图生图类别，并按 OpenAI images 接口提交', async () => {
+  const { apiImageSpecs, runApiImage } = await import('../lib/core/catalog/api-image.js');
+  const { classifyModel } = await import('../lib/core/llm.js');
+  assert.strictEqual(classifyModel('gpt-image-1'), 'image');
+  assert.strictEqual(classifyModel('qwen2.5-vl-72b'), 'vision');
+  assert.strictEqual(classifyModel('deepseek/deepseek-v4.1-flash'), 'text');
+  const cfg = { llm: { baseUrl: 'http://127.0.0.1:1/v1', apiKey: 'k', models: [{ id: 'gpt-image-1', kind: 'image' }, { id: 'x', kind: 'text' }] } };
+  const specs = apiImageSpecs(cfg);
+  assert.deepStrictEqual(specs.map((s) => s.key), ['api:t2i:gpt-image-1', 'api:i2i:gpt-image-1']);
+  const calls = [];
+  const orig = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, body: JSON.parse(init.body) });
+    return new Response(JSON.stringify({ data: [{ b64_json: Buffer.from('png').toString('base64') }] }), { status: 200 });
+  };
+  try {
+    const r = await runApiImage(cfg, specs[0], { positive_prompt: '一只猫', width: 1344, height: 768 });
+    assert.strictEqual(calls[0].url, 'http://127.0.0.1:1/v1/images/generations');
+    assert.deepStrictEqual(calls[0].body, { model: 'gpt-image-1', prompt: '一只猫', n: 1, size: '1344x768' });
+    assert.strictEqual(r.outputs[0].apiData.toString(), 'png');
+  } finally { globalThis.fetch = orig; }
+});

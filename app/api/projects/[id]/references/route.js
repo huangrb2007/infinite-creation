@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Projects, ReferenceImages, Assets, Chapters, resolveProjectPath, slugify, uid, ensureProjectDirs, loadConfig, llmChat, extractJson, buildVisionUserMessage, logger, withWriteContext } from '@/lib/core/index.js';
+import { Projects, ReferenceImages, Assets, Chapters, resolveProjectPath, slugify, uid, ensureProjectDirs, loadConfig, llmChat, llmFor, llmVisionAvailable, extractJson, buildVisionUserMessage, logger, withWriteContext } from '@/lib/core/index.js';
 import { runInlineJob } from '@/lib/agent/index.js';
 import { broadcast } from '@/lib/ws.js';
 import { PROJECT_ASSET_SUBDIRS, ASSET_CATEGORY_IDS, REFERENCE_IMAGE_EXTS, REFERENCE_IMAGE_MAX_BYTES, isVariantAssetCategory } from '@/lib/shared/index.js';
@@ -20,7 +20,7 @@ async function analyzeUploadedImage(buf, extName) {
   try {
     const cfg = loadConfig();
     // 与 llmChat 同口径：只要求「开了 vision 且配了 Base URL」——本地无鉴权端点没有 api_key。
-    if (!cfg.llm?.vision || !cfg.llm?.baseUrl) return null;
+    if (!llmVisionAvailable(cfg.llm) || !cfg.llm?.baseUrl) return null;
     const mimeType = IMAGE_MIME[extName];
     if (!mimeType) return null;
     const dataUrl = 'data:' + mimeType + ';base64,' + buf.toString('base64');
@@ -28,7 +28,7 @@ async function analyzeUploadedImage(buf, extName) {
       { role: 'system', content: '你是视频素材命名助手。根据图片内容，输出一个简洁准确的中文素材名、所属分类和一句话用途描述。只输出 JSON。' },
       buildVisionUserMessage('请分析这张图片，只返回 JSON：{"name":"素材名（中文，2-8字，概括主体，如「红衣少女」「江南小镇」）","category":"character|scene|prop|other 之一（人物=character，场景/背景=scene，道具/物品=prop，其它=other）","description":"一句话描述图片内容及其适合用于剧情的哪个位置"}', [dataUrl]),
     ];
-    const resp = await llmChat(cfg.llm, messages, { json: true, temperature: 0.3, maxTokens: 300, timeoutMs: 30000 });
+    const resp = await llmChat(llmFor(cfg.llm, 'vision'), messages, { json: true, temperature: 0.3, maxTokens: 300, timeoutMs: 30000 });
     const info = extractJson(resp.content);
     const name = String(info.name || '').trim().slice(0, 40);
     if (!name) return null;

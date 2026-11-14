@@ -7,7 +7,7 @@ import { useToast } from './toast.jsx';
 // 设置 → 工作流：云端 ComfyUI 与号池的工作流按类别列出，每个类别选一个给生产流水线用。
 // 选择写在 cfg.catalog.selected（随「保存配置」一起写入）；刷新目录走后台任务，这里轮询进度。
 
-const SOURCE_LABEL = { cloud: '云端', pool: '号池' };
+const SOURCE_LABEL = { cloud: '云端', pool: '号池', api: 'LLM 接口' };
 const SERIES_HINT = 'U=H3 视频 · B=Qwen 编辑 · N=声音 · J=数字人 · P=动作迁移';
 
 function ago(ts) {
@@ -51,10 +51,10 @@ export default function WorkflowCatalogPanel({ cfg, setCfg, Section }) {
 
   async function refresh(which) {
     try {
-      const d = await api.post('/api/catalog/refresh', { which });
+      const d = await api.post('/api/catalog/refresh', { which, catalog, comfyuiBaseUrl: cfg.comfyui?.baseUrl });
       setData(d);
       timer.current = setTimeout(load, 1200);
-      toast.success('开始刷新工作流目录（使用已保存的服务地址）');
+      toast.success('开始刷新工作流目录');
     } catch (e) {
       toast.error('刷新失败：' + e.message);
     }
@@ -85,6 +85,13 @@ export default function WorkflowCatalogPanel({ cfg, setCfg, Section }) {
   return (
     <>
       <Section icon={Cloud} title="工作流来源" description="从「ComfyUI 服务」里填的云端地址自动读取已保存的工作流；号池为可选的第二个来源。">
+        <Switch
+          checked={catalog.cloud?.enabled !== false}
+          onChange={(v) => setCatalog({ cloud: { ...(catalog.cloud || {}), enabled: v } })}
+          label="读取云端 ComfyUI 工作流"
+          hint="使用「ComfyUI 服务」里填的地址。只用号池出片时关掉。"
+        />
+        {catalog.cloud?.enabled !== false ? (
         <Field label="读取哪些系列" hint={'按文件夹名开头的字母筛选，逗号分隔，留空读取全部（' + SERIES_HINT + '）'}>
           <Input
             value={(catalog.series || []).join(',')}
@@ -93,6 +100,7 @@ export default function WorkflowCatalogPanel({ cfg, setCfg, Section }) {
             className="max-w-[260px]"
           />
         </Field>
+        ) : null}
 
         <div className="flex flex-col gap-3 rounded-xl border border-[var(--line)] bg-black/20 p-3.5">
           <Switch
@@ -146,13 +154,14 @@ export default function WorkflowCatalogPanel({ cfg, setCfg, Section }) {
             <span className="text-[11.5px] text-[var(--fg-3)]">正在读取 {refreshing.done}/{refreshing.total || '…'}</span>
           ) : (
             <span className="text-[11.5px] text-[var(--fg-4)]">
-              云端 {data?.cloud?.count ?? 0} 个 · {ago(data?.cloud?.refreshedAt)}
-              {pool.enabled ? ' · 号池 ' + (data?.pool?.count ?? 0) + ' 个' : ''}
+              {catalog.cloud?.enabled !== false ? '云端 ' + (data?.cloud?.count ?? 0) + ' 个 · ' : ''}
+              {pool.enabled ? '号池 ' + (data?.pool?.count ?? 0) + ' 个 · ' : ''}
+              {ago(Math.max(data?.cloud?.refreshedAt || 0, data?.pool?.refreshedAt || 0))}
             </span>
           )}
         </div>
-        <p className="m-0 text-[11px] text-[var(--fg-4)]">刷新使用已保存的配置：改了地址或系列请先「保存配置」再刷新。</p>
-        {data?.cloud?.error ? <p className="m-0 text-[11.5px] text-[var(--danger)]">云端读取失败：{data.cloud.error}</p> : null}
+        <p className="m-0 text-[11px] text-[var(--fg-4)]">刷新按当前填写的内容读取；选好工作流后记得「保存配置」，生成时才会用上。</p>
+        {catalog.cloud?.enabled !== false && data?.cloud?.error ? <p className="m-0 text-[11.5px] text-[var(--danger)]">云端读取失败：{data.cloud.error}</p> : null}
         {pool.enabled && data?.pool?.error ? <p className="m-0 text-[11.5px] text-[var(--danger)]">号池读取失败：{data.pool.error}</p> : null}
         {err ? <p className="m-0 text-[11.5px] text-[var(--danger)]">{err}</p> : null}
       </Section>
@@ -168,6 +177,7 @@ export default function WorkflowCatalogPanel({ cfg, setCfg, Section }) {
                 group={g}
                 value={selected[g.id] || ''}
                 onChange={(v) => choose(g.id, v)}
+                noBuiltin={catalog.cloud?.enabled === false}
                 open={open}
                 detail={detail}
                 onToggle={toggleDetail}
@@ -183,10 +193,11 @@ export default function WorkflowCatalogPanel({ cfg, setCfg, Section }) {
   );
 }
 
-function CategoryRow({ group, value, onChange, open, detail, onToggle }) {
+function CategoryRow({ group, value, onChange, open, detail, onToggle, noBuiltin }) {
   const items = useMemo(() => {
     const BUILTIN = { digital_human: '内置（H3 视频工作流的数字人模式）', motion: '不使用' };
-    const base = [{ value: '', label: BUILTIN[group.id] || '内置默认' }];
+    // 不读云端 ComfyUI（只用号池）时，内置工作流没有地方运行，空选项显示为「未选择」
+    const base = [{ value: '', label: noBuiltin ? '未选择' : BUILTIN[group.id] || '内置默认' }];
     for (const it of group.items) {
       base.push({
         value: it.key,
@@ -194,7 +205,7 @@ function CategoryRow({ group, value, onChange, open, detail, onToggle }) {
       });
     }
     return base;
-  }, [group.items, group.id]);
+  }, [group.items, group.id, noBuiltin]);
   const cur = group.items.find((it) => it.key === value);
   const readyCount = group.items.filter((it) => it.ready).length;
   return (

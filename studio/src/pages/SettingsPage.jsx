@@ -37,6 +37,7 @@ import SkillsPanel from '../components/SkillsPanel.jsx';
 import SkillPipelinePanel from '../components/SkillPipelinePanel.jsx';
 import SubtitlePanel from '../components/SubtitlePanel.jsx';
 import WorkflowCatalogPanel from '../components/WorkflowCatalogPanel.jsx';
+import LlmModelRoles from '../components/LlmModelRoles.jsx';
 import { useToast } from '../components/toast.jsx';
 
 const PROVIDER_OPTIONS = COMFY_PROVIDERS.map((p) => ({ value: p.id, label: p.label }));
@@ -753,10 +754,7 @@ export default function SettingsPage({ onBack, publicMode = false }) {
                 <Field label="Base URL" hint="需以 /v1 结尾。" className="sm:col-span-2">
                   <Input value={cfg.llm.baseUrl} onChange={(e) => setCfg({ ...cfg, llm: { ...cfg.llm, baseUrl: e.target.value } })} placeholder="https://api.example.com/v1" />
                 </Field>
-                <Field label="模型">
-                  <Input value={cfg.llm.model} onChange={(e) => setCfg({ ...cfg, llm: { ...cfg.llm, model: e.target.value } })} placeholder="模型名" />
-                </Field>
-                <Field label="API Key">
+                <Field label="API Key" className="sm:col-span-2">
                   <Input
                     type="password"
                     value={cfg.llm.apiKey || ''}
@@ -766,11 +764,13 @@ export default function SettingsPage({ onBack, publicMode = false }) {
                 </Field>
               </div>
 
+              <LlmModelRoles cfg={cfg} setCfg={setCfg} />
+
               <Switch
                 checked={!!cfg.llm.vision}
                 onChange={(v) => setCfg({ ...cfg, llm: { ...cfg.llm, vision: v } })}
-                label="支持图片输入（多模态 / 视觉模型）"
-                hint="开启后，写分镜 / 图生图提示词时会把参考图提交给大模型；请确认模型确实支持视觉输入。"
+                label="主模型支持看图"
+                hint="开启后，Agent 写分镜 / 视频提示词时会直接把参考图交给主模型；请确认主模型确实支持图片输入。单独选了视觉模型时，看图类的小任务交给视觉模型。"
               />
 
               <div className="flex flex-wrap items-center gap-2">
@@ -942,7 +942,12 @@ export default function SettingsPage({ onBack, publicMode = false }) {
           ) : null}
 
           {active === 'hardware' ? (
-            <Section icon={Cpu} title="硬件适配" description="只影响实际提交给 ComfyUI 的工作流">
+            <Section icon={Cpu} title="硬件适配" description="只影响本机 ComfyUI 的内置工作流">
+              {Object.values(cfg.catalog?.selected || {}).some(Boolean) ? (
+                <p className="m-0 rounded-lg border border-[color-mix(in_srgb,var(--accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] px-3 py-2 text-[11.5px] text-[var(--fg-2)]">
+                  已在「工作流」页按类别选了号池 / 云端 / LLM 接口的工作流，这些类别以「工作流」页为准，这里的设置只对没选的类别生效。
+                </p>
+              ) : null}
               <Segmented
                 value={hwMode}
                 onChange={switchMode}

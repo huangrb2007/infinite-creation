@@ -10,7 +10,15 @@ export async function POST(req) {
   if (process.env.IC_PUBLIC === '1') return NextResponse.json({ error: '公开模式下不允许刷新' }, { status: 403 });
   const body = await req.json().catch(() => ({}));
   const which = ['cloud', 'pool'].includes(body?.which) ? body.which : 'all';
-  const cfg = loadConfig();
+  // 用设置页当前填的值（可能还没保存）去拉取：号池地址、校验码、系列、云端开关、ComfyUI 地址
+  const saved = loadConfig();
+  const cfg = { ...saved };
+  if (body?.catalog && typeof body.catalog === 'object') {
+    const pool = { ...(saved.catalog?.pool || {}), ...(body.catalog.pool || {}) };
+    if (!body.catalog.pool?.key) pool.key = saved.catalog?.pool?.key || '';
+    cfg.catalog = { ...(saved.catalog || {}), ...body.catalog, pool };
+  }
+  if (body?.comfyuiBaseUrl) cfg.comfyui = { ...(saved.comfyui || {}), baseUrl: body.comfyuiBaseUrl };
   refreshCatalog(cfg, which).catch(() => {});
   await new Promise((r) => setTimeout(r, 50));
   return NextResponse.json(catalogSummary(cfg));
