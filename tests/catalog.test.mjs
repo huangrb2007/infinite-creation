@@ -272,3 +272,35 @@ test('只用号池 / LLM 接口时：运行前不检查 ComfyUI；没有音色�
   assert.strictEqual(kindUsesComfy(cfg2, 't2i'), true);
   await assert.rejects(preflight(['image'], cfg2), /ComfyUI 未就绪/);
 });
+
+test('超时为 0（关了排队调度）表示不限时：LLM 接口出图和号池任务都不能立刻判超时', async () => {
+  const { runApiImage } = await import('../lib/core/catalog/api-image.js');
+  const { poolGenerate } = await import('../lib/core/catalog/pool-client.js');
+  const orig = globalThis.fetch;
+  let polls = 0;
+  globalThis.fetch = async (url) => {
+    url = String(url);
+    if (url.endsWith('/v1/image/generations')) return new Response('{"task_id":"t9"}', { status: 200 });
+    if (url.endsWith('/v1/image/generations/t9')) return new Response('{"data":{"status":"SUCCESS","result_url":"https://x/a.webp"}}', { status: 200 });
+    if (url.endsWith('/v1/jobs')) return new Response('{"id":"j1","status":"QUEUED"}', { status: 200 });
+    if (url.endsWith('/v1/jobs/j1')) { polls++; return new Response(JSON.stringify({ id: 'j1', status: polls < 2 ? 'RUNNING' : 'SUCCESS', outputs: [] }), { status: 200 }); }
+    return new Response('{}', { status: 404 });
+  };
+  try {
+    const r = await runApiImage({ llm: { baseUrl: 'http://h/v1' } }, { model: 'm', category: 't2i' }, { positive_prompt: '猫' }, { timeoutMs: 0 });
+    assert.strictEqual(r.outputs[0].filename.endsWith('.webp'), true);
+    const j = await poolGenerate({ baseUrl: 'http://p', key: 'k' }, { workflow: { id: 'w' }, parameters: {} }, { timeoutMs: 0, pollMs: 5 });
+    assert.ok(j);
+    assert.strictEqual(polls, 2);
+  } finally { globalThis.fetch = orig; }
+});
+
+test('LLM 接口语音模型作为音色设计来源：按性别年龄挑预置音色', async () => {
+  const { apiAudioSpecs, pickPresetVoice } = await import('../lib/core/catalog/api-audio.js');
+  const specs = apiAudioSpecs({ llm: { models: [{ id: 'qwen3-tts-flash', kind: 'audio' }, { id: 'suno-generation', kind: 'audio' }] } });
+  assert.deepStrictEqual(specs.map((s) => s.key), ['api:tts:qwen3-tts-flash']);
+  assert.ok(['Cherry', 'Chelsie', 'Serena'].includes(pickPresetVoice('青年女性，温柔', 'a')));
+  assert.ok(['Ethan', 'Kai'].includes(pickPresetVoice('少年男声', 'b')));
+  assert.ok(['Eldric Sage', 'Arthur'].includes(pickPresetVoice('老年男性', 'c')));
+  assert.strictEqual(pickPresetVoice('小孩，童声'), 'Mochi');
+});

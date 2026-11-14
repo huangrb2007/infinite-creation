@@ -173,9 +173,10 @@ export default function LlmModelRoles({ cfg, setCfg }) {
           <Select value={roles.rewrite || ''} onChange={(v) => setRole('rewrite', v)} items={withCurrent(toItems(chatModels, '同主模型'), roles.rewrite)} size="sm" />
         </Field>
       </div>
-      {counts.image || counts.video ? (
+      {counts.image || counts.video || counts.audio ? (
         <p className="m-0 text-[11px] leading-relaxed text-[var(--fg-4)]">
           {counts.image ? '图片生成模型（' + counts.image + ' 个）会出现在「工作流」页的文生图 / 图生图里，保存后到那里选用。' : ''}
+          {models.some((m) => m.kind === 'audio' && /qwen3-tts|qwen-tts/i.test(m.id)) ? 'Qwen3-TTS 语音模型会出现在「音色设计」里。' : ''}
           {counts.video ? '视频生成模型暂不能作出片来源。' : ''}
         </p>
       ) : null}
