@@ -377,3 +377,23 @@ test('LLM 接口视频 / 音乐模型按类别归类，请求体按站点格式�
     assert.strictEqual(r2v.images.length, 1);
   } finally { globalThis.fetch = orig; }
 });
+
+test('H3 ComfyUI 系模型的请求格式；站点报不允许的分辨率 / 比例 / 时长时按消息自动改成最接近的', async () => {
+  const { videoFamily, fixBodyFromError, apiRefPrompt, nearestOf } = await import('../lib/core/catalog/api-media.js');
+  assert.strictEqual(videoFamily('minimax-h3-comfyui-max-10020'), 'h3comfy');
+  assert.strictEqual(apiRefPrompt('__MINIMAX_H3_REF_1__ 说 __MINIMAX_H3_REF_2__', [{ type: 'image' }, { type: 'audio' }], 'angle'), '<Picture 1> 说 <Audio 1>');
+  assert.strictEqual(apiRefPrompt('__MINIMAX_H3_REF_2__', [{ type: 'image' }, { type: 'audio' }], 'angle-noaudio'), '参考音频 1');
+  assert.strictEqual(nearestOf('1080p', ['480p', '608p', '768p']), '768p');
+  assert.strictEqual(nearestOf('4:3', ['16:9', '9:16'], 'ratio'), '16:9');
+  const b = { model: 'x', prompt: 'p', seconds: '11', metadata: { resolution: '720p', ratio: '21:9' } };
+  assert.ok(fixBodyFromError(b, 'Aspect ratio must be 16:9 or 9:16 and resolution one of 480p, 608p, 768p, 672p'));
+  assert.deepStrictEqual(b.metadata, { resolution: '768p', ratio: '16:9' });
+  const c = { model: 'x', prompt: 'p', seconds: '11', metadata: {} };
+  assert.ok(fixBodyFromError(c, 'seconds must be one of 5, 10'));
+  assert.strictEqual(c.seconds, '10');
+  const h = { model: 'MiniMax-H3', prompt: 'p', duration: 20, resolution: '768P', metadata: { h3_request: { duration: 20, resolution: '768P', ratio: '16:9' } } };
+  assert.ok(fixBodyFromError(h, 'duration must be between 4 and 15'));
+  assert.strictEqual(h.duration, 15);
+  assert.strictEqual(h.metadata.h3_request.duration, 15);
+  assert.strictEqual(fixBodyFromError({ metadata: {} }, 'prompt is required'), false);
+});
