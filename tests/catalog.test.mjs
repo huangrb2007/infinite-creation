@@ -304,3 +304,26 @@ test('LLM 接口语音模型作为音色设计来源：按性别年龄挑预置�
   assert.ok(['Eldric Sage', 'Arthur'].includes(pickPresetVoice('老年男性', 'c')));
   assert.strictEqual(pickPresetVoice('小孩，童声'), 'Mochi');
 });
+
+test('流式 TTS 的 WAV 头长度占位值被改正', async () => {
+  const { fixWavHeader } = await import('../lib/core/catalog/api-audio.js');
+  const pcm = Buffer.alloc(4800);
+  const h = Buffer.alloc(44);
+  h.write('RIFF', 0); h.writeUInt32LE(0xffffffff, 4); h.write('WAVE', 8); h.write('fmt ', 12); h.writeUInt32LE(16, 16);
+  h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22); h.writeUInt32LE(24000, 24); h.writeUInt32LE(48000, 28); h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34);
+  h.write('data', 36); h.writeUInt32LE(0x7fffffff, 40);
+  const f = fixWavHeader(Buffer.concat([h, pcm]));
+  assert.strictEqual(f.readUInt32LE(40), 4800);
+  assert.strictEqual(f.readUInt32LE(4), 44 + 4800 - 8);
+});
+
+test('号池素材口只认 fieldType 为 IMAGE/AUDIO/VIDEO 的字段，ref_image_size 等普通参数不算', () => {
+  const spec = poolWorkflowToSpec({ id: 'h3', name: 'MINIMAX-H3 U39', kind: 'video', schema: [
+    { nodeId: '136', fieldName: 'ref_image_size', fieldType: 'STRING', fieldValue: 'match' },
+    { nodeId: '148', fieldName: 'trim_to_audio', fieldType: 'BOOLEAN', fieldValue: true },
+    { nodeId: '136__story_image_0', fieldName: 'image', fieldType: 'IMAGE' },
+    { nodeId: '136__story_audio_0', fieldName: 'audio', fieldType: 'AUDIO' },
+  ], mapping: { prompt: '1:text' } });
+  assert.deepStrictEqual(spec.slots.image.map((s) => s.node), ['136__story_image_0']);
+  assert.deepStrictEqual(spec.slots.audio.map((s) => s.node), ['136__story_audio_0']);
+});
