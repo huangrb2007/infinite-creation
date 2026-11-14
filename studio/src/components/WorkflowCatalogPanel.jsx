@@ -198,6 +198,9 @@ function CategoryRow({ group, value, onChange, open, detail, onToggle, noBuiltin
     const BUILTIN = { digital_human: '内置（H3 视频工作流的数字人模式）', motion: '不使用' };
     // 不读云端 ComfyUI（只用号池）时，内置工作流没有地方运行，空选项显示为「未选择」
     const base = [{ value: '', label: noBuiltin ? '未选择' : BUILTIN[group.id] || '内置默认' }];
+    // 音色 / 背景音乐可以明确不要：音色阶段跳过（视频模型自己配音）、成片不垫背景音乐
+    const NONE = { tts: '不生成音色（视频模型自己配音）', music: '不加背景音乐' };
+    if (NONE[group.id]) base.push({ value: 'none', label: NONE[group.id] });
     for (const it of group.items) {
       base.push({
         value: it.key,

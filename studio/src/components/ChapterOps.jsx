@@ -200,9 +200,11 @@ export default function ChapterOps({ projectId, chapter, running, runningChapter
                     <span className="flex items-center gap-2">
                       <StageIcon size={12} className="text-[var(--fg-3)]" />
                       <span className="text-[12.5px] font-medium text-[var(--fg)]">{s.label}</span>
-                      <Badge tone={todo ? 'accent' : 'neutral'}>待办 {todo}</Badge>
+                      {pending[s.id]?.skipped ? <Badge tone="neutral">已跳过</Badge> : <Badge tone={todo ? 'accent' : 'neutral'}>待办 {todo}</Badge>}
                     </span>
-                    {s.desc ? <span className="text-[11px] leading-relaxed text-[var(--fg-3)]">{s.desc}</span> : null}
+                    {pending[s.id]?.skipped ? (
+                      <span className="text-[11px] leading-relaxed text-[var(--fg-3)]">没有可用的音色工作流（或设为不生成），视频里的角色声音由视频模型自己生成</span>
+                    ) : s.desc ? <span className="text-[11px] leading-relaxed text-[var(--fg-3)]">{s.desc}</span> : null}
                   </span>
                 </div>
               );

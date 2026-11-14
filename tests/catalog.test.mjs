@@ -251,3 +251,24 @@ test('获取模型列表：用站点目录（/api/pricing）的 tags 和说明�
   assert.deepStrictEqual(models.map((m) => m.id + ':' + m.kind), ['acme-image-v2:image', 'acme/gm-4:text', 'deepseek/x:vision']);
   assert.strictEqual(site.find((m) => m.id === 'acme-video').kind, 'video');
 });
+
+test('只用号池 / LLM 接口时：运行前不检查 ComfyUI；没有音色来源时音色阶段跳过', async () => {
+  const { kindUnavailable, kindUsesComfy, voiceDesignSkipped } = await import('../lib/core/workflow-specs.js');
+  const { preflight } = await import('../lib/agent/stages.js');
+  const cfg = {
+    comfyui: { baseUrl: 'http://127.0.0.1:1' },
+    llm: { baseUrl: 'http://127.0.0.1:1/v1', models: [{ id: 'img', kind: 'image' }] },
+    catalog: { cloud: { enabled: false }, selected: { t2i: 'api:t2i:img', i2i: 'api:i2i:img', music: 'none' } },
+  };
+  assert.strictEqual(kindUsesComfy(cfg, 't2i'), false);
+  assert.strictEqual(kindUnavailable(cfg, 'tts'), true);
+  assert.strictEqual(voiceDesignSkipped(cfg), true);
+  assert.strictEqual(kindUnavailable(cfg, 'music'), true);
+  // 资产图 + 音色：都不需要 ComfyUI，不应报「ComfyUI 未就绪」
+  const r = await preflight(['image', 'tts'], cfg);
+  assert.ok(r);
+  // 开着云端读取、又没选：内置工作流要用 ComfyUI → 仍然检查
+  const cfg2 = { ...cfg, catalog: { selected: {} } };
+  assert.strictEqual(kindUsesComfy(cfg2, 't2i'), true);
+  await assert.rejects(preflight(['image'], cfg2), /ComfyUI 未就绪/);
+});
