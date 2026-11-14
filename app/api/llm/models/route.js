@@ -10,8 +10,8 @@ export async function POST(req) {
   const saved = loadConfig().llm || {};
   const llm = { baseUrl: body.baseUrl || saved.baseUrl, apiKey: body.apiKey || saved.apiKey };
   try {
-    const models = await listLlmModels(llm);
-    return NextResponse.json({ ok: true, models });
+    const { models, site } = await listLlmModels(llm);
+    return NextResponse.json({ ok: true, models, site });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e.message });
   }

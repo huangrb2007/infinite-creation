@@ -156,12 +156,14 @@ test('LLM 接口的图片模型出现在文生图 / 图生图类别，并按 Ope
   const orig = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     calls.push({ url, body: JSON.parse(init.body) });
+    // 先试异步任务路径，OpenAI 官方这类站点会 404，再走 /images/generations
+    if (url.endsWith('/image/generations')) return new Response('{"error":{"message":"Invalid URL"}}', { status: 404 });
     return new Response(JSON.stringify({ data: [{ b64_json: Buffer.from('png').toString('base64') }] }), { status: 200 });
   };
   try {
     const r = await runApiImage(cfg, specs[0], { positive_prompt: '一只猫', width: 1344, height: 768 });
-    assert.strictEqual(calls[0].url, 'http://127.0.0.1:1/v1/images/generations');
-    assert.deepStrictEqual(calls[0].body, { model: 'gpt-image-1', prompt: '一只猫', n: 1, size: '1344x768' });
+    assert.strictEqual(calls[1].url, 'http://127.0.0.1:1/v1/images/generations');
+    assert.deepStrictEqual(calls[1].body, { model: 'gpt-image-1', prompt: '一只猫', n: 1, size: '1344x768' });
     assert.strictEqual(r.outputs[0].apiData.toString(), 'png');
   } finally { globalThis.fetch = orig; }
 });
@@ -184,4 +186,68 @@ test('号池标成视频的角色替换工作流归到动作迁移', () => {
     schema: [{ nodeId: '1', fieldName: 'image', fieldType: 'IMAGE' }, { nodeId: '2', fieldName: 'video', fieldType: 'VIDEO' }], mapping: {} });
   assert.strictEqual(spec.category, 'motion');
   assert.deepStrictEqual(spec.roles.character, { node: '1', field: 'image' });
+});
+
+test('LLM 接口图片模型：异步任务协议（提交 + 轮询 + 上传参考图），不支持时退回 OpenAI 协议', async () => {
+  const http = await import('node:http');
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { runApiImage } = await import('../lib/core/catalog/api-image.js');
+  const seen = [];
+  const mk = (taskMode) => http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      seen.push(req.method + ' ' + req.url + ' ' + (req.headers['content-type'] || '').split(';')[0] + ' ' + (body.startsWith('{') ? body : ''));
+      res.setHeader('Content-Type', 'application/json');
+      if (!taskMode && req.url === '/v1/image/generations') { res.statusCode = 404; return res.end('{"error":{"message":"Invalid URL"}}'); }
+      if (req.url === '/v1/files/upload') return res.end('{"url":"https://cdn.example/ref.png"}');
+      if (req.url === '/v1/image/generations') return res.end('{"task_id":"t1","status":"queued"}');
+      if (req.url === '/v1/image/generations/t1') return res.end('{"code":"success","data":{"status":"SUCCESS","result_url":"https://cdn.example/out.png"}}');
+      if (req.url === '/v1/images/generations') return res.end('{"data":[{"url":"https://cdn.example/oa.png"}]}');
+      res.statusCode = 404; res.end('{}');
+    });
+  });
+  const listen = (srv) => new Promise((r) => srv.listen(0, '127.0.0.1', () => r(srv.address().port)));
+  const ref = path.join(os.tmpdir(), 'ic-ref-test.png');
+  fs.writeFileSync(ref, Buffer.from([1, 2, 3]));
+
+  const a = mk(true);
+  const pa = await listen(a);
+  const cfgA = { llm: { baseUrl: 'http://127.0.0.1:' + pa + '/v1', apiKey: 'k' } };
+  const r1 = await runApiImage(cfgA, { model: 'img', category: 'i2i' }, { positive_prompt: '猫', image: ref, width: 1920, height: 1080 });
+  assert.strictEqual(r1.outputs[0].apiUrl, 'https://cdn.example/out.png');
+  const submit = seen.find((s) => s.startsWith('POST /v1/image/generations '));
+  assert.ok(submit.includes('"size":"16:9"') && submit.includes('"resolution":"2k"') && submit.includes('"images":["https://cdn.example/ref.png"]'), submit);
+  a.close();
+
+  seen.length = 0;
+  const b = mk(false);
+  const pb = await listen(b);
+  const r2 = await runApiImage({ llm: { baseUrl: 'http://127.0.0.1:' + pb + '/v1' } }, { model: 'img', category: 't2i' }, { positive_prompt: '猫' });
+  assert.strictEqual(r2.outputs[0].apiUrl, 'https://cdn.example/oa.png');
+  assert.ok(seen.some((s) => s.startsWith('POST /v1/images/generations')));
+  b.close();
+});
+
+test('获取模型列表：用站点目录（/api/pricing）的 tags 和说明分类', async () => {
+  const http = await import('node:http');
+  const { listLlmModels } = await import('../lib/core/llm.js');
+  const srv = http.createServer((req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/v1/models') return res.end(JSON.stringify({ data: [{ id: 'deepseek/x' }, { id: 'acme/gm-4' }, { id: 'acme-image-v2' }] }));
+    if (req.url === '/api/pricing') return res.end(JSON.stringify({ data: [
+      { model_name: 'deepseek/x', tags: 'llm', description: '多模态对话模型，支持文本和图片输入' },
+      { model_name: 'acme/gm-4', tags: 'llm', description: '纯文本对话' },
+      { model_name: 'acme-image-v2', tags: 'image', display_name: 'Acme Image' },
+      { model_name: 'acme-video', tags: 'video,kling' },
+    ] }));
+    res.statusCode = 404; res.end('{}');
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const { models, site } = await listLlmModels({ baseUrl: 'http://127.0.0.1:' + srv.address().port + '/v1' });
+  srv.close();
+  assert.deepStrictEqual(models.map((m) => m.id + ':' + m.kind), ['acme-image-v2:image', 'acme/gm-4:text', 'deepseek/x:vision']);
+  assert.strictEqual(site.find((m) => m.id === 'acme-video').kind, 'video');
 });

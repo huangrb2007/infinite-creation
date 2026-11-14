@@ -1,23 +1,29 @@
 import { useMemo, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { Plus, RefreshCw, X } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { classifyModel } from '../lib/shared.js';
 import { Badge, Button, Field, Input, Select, Spinner } from './ui.jsx';
 
-// 设置 → LLM：获取接口下的全部模型，按用途分配（主模型 / 视觉 / 改写）。
-// 没获取列表时仍可手填主模型，与原来的用法一致。
+// 设置 → LLM：这个接口下要用的模型（获取 + 手动添加），再按用途分配（主模型 / 视觉 / 改写）。
+// 图片生成模型会出现在「工作流」页的文生图 / 图生图里。
 const KIND_LABEL = { text: '文本', vision: '可看图', image: '图片生成', video: '视频生成', audio: '音频', other: '其它' };
 const KIND_ORDER = { vision: 0, text: 1, image: 2, video: 3, audio: 4, other: 5 };
+const KIND_CYCLE = ['text', 'vision', 'image', 'video', 'audio', 'other'];
+const KIND_TONE = { vision: 'accent', image: 'success', video: 'info' };
 
 export default function LlmModelRoles({ cfg, setCfg }) {
   const llm = cfg.llm || {};
   const roles = llm.roles || {};
-  const [models, setModels] = useState(() => llm.models || []);
+  const models = llm.models || [];
+  const [site, setSite] = useState([]);
+  const [keyCount, setKeyCount] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
-  const [filter, setFilter] = useState('');
+  const [adding, setAdding] = useState('');
 
   const setLlm = (patch) => setCfg({ ...cfg, llm: { ...llm, ...patch } });
   const setRole = (k, v) => setLlm({ roles: { ...roles, [k]: v } });
+  const setModels = (list) => setLlm({ models: list });
 
   async function fetchModels() {
     setLoading(true);
@@ -25,9 +31,13 @@ export default function LlmModelRoles({ cfg, setCfg }) {
     try {
       const r = await api.post('/api/llm/models', { baseUrl: llm.baseUrl, apiKey: llm.apiKey });
       if (!r.ok) throw new Error(r.error);
-      setModels(r.models);
-      // 列表随配置保存，下次打开设置页不用再拉
-      setLlm({ models: r.models });
+      setSite(r.site || []);
+      setKeyCount(r.models.length);
+      // 合并：接口返回的更新类型，之前手动添加的保留
+      const map = new Map(models.map((m) => [m.id, m]));
+      for (const m of r.models) map.set(m.id, { ...map.get(m.id), ...m });
+      const siteMap = new Map((r.site || []).map((m) => [m.id, m]));
+      setModels([...map.values()].map((m) => (m.manualKind || !siteMap.get(m.id) ? m : { ...m, kind: siteMap.get(m.id).kind })));
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -35,12 +45,29 @@ export default function LlmModelRoles({ cfg, setCfg }) {
     }
   }
 
-  const sorted = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    return [...models]
-      .filter((m) => !q || m.id.toLowerCase().includes(q))
-      .sort((a, b) => (KIND_ORDER[a.kind] ?? 9) - (KIND_ORDER[b.kind] ?? 9) || a.id.localeCompare(b.id));
-  }, [models, filter]);
+  function addModel(raw) {
+    const ids = String(raw || '').split(/[\s,，]+/).map((s) => s.trim()).filter(Boolean);
+    if (!ids.length) return;
+    const siteMap = new Map(site.map((m) => [m.id, m]));
+    const have = new Set(models.map((m) => m.id));
+    const next = [...models];
+    for (const id of ids) {
+      if (have.has(id)) continue;
+      const sm = siteMap.get(id);
+      next.push({ id, kind: sm?.kind || classifyModel(id), ...(sm?.label ? { label: sm.label } : {}), manual: true });
+      have.add(id);
+    }
+    setModels(next);
+    setAdding('');
+  }
+  const removeModel = (id) => setModels(models.filter((m) => m.id !== id));
+  const cycleKind = (id) =>
+    setModels(models.map((m) => (m.id === id ? { ...m, kind: KIND_CYCLE[(KIND_CYCLE.indexOf(m.kind) + 1) % KIND_CYCLE.length], manualKind: true } : m)));
+
+  const sorted = useMemo(
+    () => [...models].sort((a, b) => (KIND_ORDER[a.kind] ?? 9) - (KIND_ORDER[b.kind] ?? 9) || a.id.localeCompare(b.id)),
+    [models],
+  );
   const chatModels = sorted.filter((m) => m.kind === 'text' || m.kind === 'vision' || m.kind === 'other');
   const toItems = (list, empty) => {
     const items = list.map((m) => ({ value: m.id, label: m.id + ' · ' + (KIND_LABEL[m.kind] || m.kind) }));
@@ -48,6 +75,10 @@ export default function LlmModelRoles({ cfg, setCfg }) {
   };
   const withCurrent = (items, cur) => (cur && !items.some((i) => i.value === cur) ? [{ value: cur, label: cur + ' · 手填' }, ...items] : items);
   const counts = models.reduce((o, m) => ((o[m.kind] = (o[m.kind] || 0) + 1), o), {});
+  const suggestions = useMemo(() => {
+    const have = new Set(models.map((m) => m.id));
+    return site.filter((m) => !have.has(m.id));
+  }, [site, models]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -57,24 +88,74 @@ export default function LlmModelRoles({ cfg, setCfg }) {
         </Button>
         {models.length ? (
           <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-[var(--fg-4)]">
-            共 {models.length} 个
+            已添加 {models.length} 个
             {Object.entries(counts).sort((a, b) => (KIND_ORDER[a[0]] ?? 9) - (KIND_ORDER[b[0]] ?? 9)).map(([k, n]) => (
-              <Badge key={k} tone={k === 'vision' ? 'accent' : 'neutral'}>{KIND_LABEL[k] || k} {n}</Badge>
+              <Badge key={k} tone={KIND_TONE[k] || 'neutral'}>{KIND_LABEL[k] || k} {n}</Badge>
             ))}
           </span>
         ) : (
-          <span className="text-[11px] text-[var(--fg-4)]">按当前填的 Base URL 和 Key 拉取接口下的全部模型，再按用途分配</span>
+          <span className="text-[11px] text-[var(--fg-4)]">按当前填的 Base URL 和 Key 拉取可用模型；拉不全的可以在下面手动添加</span>
         )}
       </div>
       {err ? <p className="m-0 text-[11.5px] text-[var(--danger)]">{err}</p> : null}
-
-      {models.length > 12 ? (
-        <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="筛选模型名…" className="h-9 max-w-[280px]" />
+      {keyCount !== null && site.length > keyCount ? (
+        <p className="m-0 text-[11px] leading-relaxed text-[var(--fg-4)]">
+          这个 Key 目前只开放了 {keyCount} 个模型（站点共 {site.length} 个）。要用其它模型，先到站点后台给这个 Key 的「模型限制」加上并保存，再点一次获取，或直接在下面添加。
+        </p>
       ) : null}
+
+      {sorted.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {sorted.map((m) => (
+            <span
+              key={m.id}
+              className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--panel-2)] pl-2.5 pr-1 text-[12px] text-[var(--fg-2)]"
+              title={m.label ? m.label + '（' + m.id + '）' : m.id}
+            >
+              <span className="max-w-[260px] truncate">{m.id}</span>
+              <button
+                type="button"
+                onClick={() => cycleKind(m.id)}
+                title="点击切换类型（自动识别不准时用）"
+                className="cursor-pointer border-0 bg-transparent p-0"
+              >
+                <Badge tone={KIND_TONE[m.kind] || 'neutral'}>{KIND_LABEL[m.kind] || m.kind}</Badge>
+              </button>
+              <button
+                type="button"
+                onClick={() => removeModel(m.id)}
+                title="移除"
+                className="grid h-5 w-5 cursor-pointer place-items-center rounded-full border-0 bg-transparent text-[var(--fg-4)] hover:bg-[var(--panel-3)] hover:text-[var(--fg-2)]"
+              >
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="flex max-w-[520px] items-center gap-2">
+        <Input
+          value={adding}
+          onChange={(e) => setAdding(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addModel(adding); } }}
+          placeholder={site.length ? '输入或选择模型名，回车添加（可一次粘贴多个）' : '手动添加模型名，回车添加（可一次粘贴多个）'}
+          list="llm-site-models"
+          className="h-9"
+        />
+        <datalist id="llm-site-models">
+          {suggestions.map((m) => (
+            <option key={m.id} value={m.id}>{(m.label ? m.label + ' · ' : '') + (KIND_LABEL[m.kind] || m.kind)}</option>
+          ))}
+        </datalist>
+        <Button variant="secondary" size="sm" onClick={() => addModel(adding)} disabled={!adding.trim()}>
+          <Plus size={13} /> 添加
+        </Button>
+      </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="主模型" hint="Agent 写剧本、拆分镜、写视频提示词">
-          {models.length ? (
+          {chatModels.length ? (
             <Select value={llm.model || ''} onChange={(v) => setLlm({ model: v })} items={withCurrent(toItems(chatModels), llm.model)} size="sm" />
           ) : (
             <Input value={llm.model || ''} onChange={(e) => setLlm({ model: e.target.value })} placeholder="模型名" />
@@ -94,7 +175,8 @@ export default function LlmModelRoles({ cfg, setCfg }) {
       </div>
       {counts.image || counts.video ? (
         <p className="m-0 text-[11px] leading-relaxed text-[var(--fg-4)]">
-          这个接口还提供 {counts.image ? counts.image + ' 个图片生成' : ''}{counts.image && counts.video ? '、' : ''}{counts.video ? counts.video + ' 个视频生成' : ''}模型，可以在「工作流」页按类别选作出图 / 出片来源。
+          {counts.image ? '图片生成模型（' + counts.image + ' 个）会出现在「工作流」页的文生图 / 图生图里，保存后到那里选用。' : ''}
+          {counts.video ? '视频生成模型暂不能作出片来源。' : ''}
         </p>
       ) : null}
     </div>
