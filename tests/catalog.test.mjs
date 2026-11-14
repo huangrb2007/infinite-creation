@@ -165,3 +165,23 @@ test('LLM 接口的图片模型出现在文生图 / 图生图类别，并按 Ope
     assert.strictEqual(r.outputs[0].apiData.toString(), 'png');
   } finally { globalThis.fetch = orig; }
 });
+
+test('号池生图工作流（参考图可选）同时出现在文生图和图生图', async () => {
+  const { withT2iVariant } = await import('../lib/core/catalog/pool-source.js');
+  const { categoryOfName } = await import('../lib/core/catalog/categories.js');
+  const schema = [{ nodeId: '37', fieldName: 'prompt', fieldValue: '' }];
+  for (let i = 101; i <= 103; i++) schema.push({ nodeId: String(i), fieldName: 'image', fieldType: 'IMAGE' });
+  const spec = poolWorkflowToSpec({ id: 'q', name: 'Qwen Image 2.1', kind: 'image', schema, mapping: { prompt: '37:prompt' } });
+  const list = withT2iVariant(spec);
+  assert.deepStrictEqual(list.map((s) => [s.key, s.category, s.ready]), [['pool:q', 'i2i', true], ['pool:q#t2i', 't2i', true]]);
+  assert.ok(!list[1].roles.image);
+  assert.strictEqual(list[1].pool.id, 'q');
+  assert.strictEqual(categoryOfName('SCAIL2视频角色替换工作流_api'), 'motion');
+});
+
+test('号池标成视频的角色替换工作流归到动作迁移', () => {
+  const spec = poolWorkflowToSpec({ id: 's', name: 'SCAIL2视频角色替换工作流_api', kind: 'video', category: 'r2v',
+    schema: [{ nodeId: '1', fieldName: 'image', fieldType: 'IMAGE' }, { nodeId: '2', fieldName: 'video', fieldType: 'VIDEO' }], mapping: {} });
+  assert.strictEqual(spec.category, 'motion');
+  assert.deepStrictEqual(spec.roles.character, { node: '1', field: 'image' });
+});
