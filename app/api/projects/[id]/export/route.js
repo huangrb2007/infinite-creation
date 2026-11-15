@@ -18,6 +18,12 @@ export async function POST(req, { params }) {
     if (chapter) done = done.filter((s) => s.chapter === chapter);
     if (!done.length) return NextResponse.json({ error: chapter ? ('章节「' + chapter + '」没有已完成的镜头') : '没有已完成的分镜' }, { status: 400 });
     const inputs = done.map((s) => resolveProjectPath(id, s.video_path)).filter(Boolean);
+    // 没出片的镜头（失败 / 未生成）：成片里会缺这几镜，结果里报出来，界面提示用户
+    const allShots = Shots.listInNarrativeOrder(id).filter((s) => !chapter || s.chapter === chapter);
+    const missing = allShots.filter((s) => !(s.video_path && s.status === 'done')).map((s) => s.idx);
+    // 换场标记：场景名变了 = 新场景第一镜，合并时做压黑过渡（与流水线自动合成一致）
+    const sceneKeyOf = (s) => String(s.scene_name || '').replace(/^【[^】]*】/, '').trim() || (s.scene_ids || []).join(',');
+    const sceneBreaks = done.map((s, i) => i > 0 && (s.chapter !== done[i - 1].chapter || sceneKeyOf(s) !== sceneKeyOf(done[i - 1])));
     const p = Projects.get(id);
     const base = chapter ? slugify(p.name) + '_' + slugify(chapter) : slugify(p.name);
     const outRel = 'exports/' + base + '_' + uid().slice(0, 8) + '.mp4';
@@ -51,15 +57,15 @@ export async function POST(req, { params }) {
           }
         }
         emit({ phase: '合并', detail: '合成成片' + (subtitles ? '（烧录字幕）' : '') });
-        await mergeVideos(inputs, resolveProjectPath(id, outRel), { music, subtitles });
+        await mergeVideos(inputs, resolveProjectPath(id, outRel), { music, subtitles, sceneBreaks });
         if (subtitles) {
-          await mergeVideos(inputs, resolveProjectPath(id, nosubRel), { music });
+          await mergeVideos(inputs, resolveProjectPath(id, nosubRel), { music, sceneBreaks });
           // 附带一份 SRT 字幕文件：不进成片列表，只作为「下载字幕」按钮的素材
           fs.writeFileSync(resolveProjectPath(id, srtRel), subtitles, 'utf8');
         }
       },
     );
-    return NextResponse.json({ export_path: outRel, url: '/files/projects/' + id + '/' + outRel, shots: done.length, chapter, music: !!music, subtitled: !!subtitles, nosub_path: subtitles ? nosubRel : '', srt_path: subtitles ? srtRel : '' });
+    return NextResponse.json({ export_path: outRel, url: '/files/projects/' + id + '/' + outRel, shots: done.length, missing, chapter, music: !!music, subtitled: !!subtitles, nosub_path: subtitles ? nosubRel : '', srt_path: subtitles ? srtRel : '' });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

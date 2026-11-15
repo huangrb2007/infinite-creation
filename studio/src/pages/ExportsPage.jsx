@@ -2,12 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { CaptionsOff, Download, Film, Play, RefreshCw, Subtitles, Trash2 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { exportTitle, fmtBytes, fmtTime, withSession } from '../lib/format.js';
-import { Badge, Button, Checkbox, EmptyState } from '../components/ui.jsx';
+import { Badge, Button, Checkbox, EmptyState, Select, Spinner } from '../components/ui.jsx';
 import { Modal } from '../components/overlays.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import { useToast } from '../components/toast.jsx';
 
-export default function ExportsPage({ projectId, readOnly = false, canExport = true, features = {} }) {
+export default function ExportsPage({ projectId, chapters = [], running = false, readOnly = false, canExport = true, features = {} }) {
   const toast = useToast();
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -15,6 +15,26 @@ export default function ExportsPage({ projectId, readOnly = false, canExport = t
   const [batchMode, setBatchMode] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [player, setPlayer] = useState(null);
+  const [assembling, setAssembling] = useState('');
+  const [assembleChapter, setAssembleChapter] = useState('');
+  const chapterTitle = assembleChapter || chapters[0]?.title || '';
+
+  // 重新合成成片：按当前已出片的镜头重新拼一版（补镜、换候选、改顺序之后用）
+  async function reassemble() {
+    if (!chapterTitle) return;
+    setAssembling(chapterTitle);
+    try {
+      const r = await api.post('/api/projects/' + projectId + '/export', { chapter: chapterTitle });
+      const miss = r.missing || [];
+      if (miss.length) toast.error('已合成「' + chapterTitle + '」（' + r.shots + ' 镜），但第 ' + miss.join('、') + ' 镜还没出片，成片里缺这几镜。到「分镜审查」把它们生成后再合成一次。');
+      else toast.success('已重新合成「' + chapterTitle + '」，共 ' + r.shots + ' 镜。');
+      await load();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setAssembling('');
+    }
+  }
 
   const load = useCallback(
     () => api.get('/api/projects/' + projectId + '/exports').then((r) => setFiles(r.files || [])).catch((e) => toast.error(e.message)),
@@ -102,6 +122,16 @@ export default function ExportsPage({ projectId, readOnly = false, canExport = t
                 </Button>
                 <Button variant="ghost" size="md" disabled={deleting} onClick={() => { setSelected(new Set()); setBatchMode(false); }}>
                   取消
+                </Button>
+              </>
+            ) : null}
+            {canExport && !readOnly && chapters.length ? (
+              <>
+                {chapters.length > 1 ? (
+                  <Select value={chapterTitle} onChange={setAssembleChapter} items={chapters.map((c) => ({ value: c.title, label: c.title }))} size="sm" className="w-[140px]" />
+                ) : null}
+                <Button variant="primary" size="md" disabled={!!assembling || running} onClick={reassemble} title={running ? '有任务在跑，等它结束再合成' : '按当前已出片的镜头重新拼一版成片'}>
+                  {assembling ? <Spinner size={13} /> : <Film size={13} />} {assembling ? '合成中…' : '重新合成成片'}
                 </Button>
               </>
             ) : null}

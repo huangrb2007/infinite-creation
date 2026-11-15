@@ -511,7 +511,7 @@ export default function ProjectWorkspace({ id, initialTab = 'chapters', onBack, 
             <ShotsPage projectId={id} chapters={chapters} cursorId={cursorId} onCursorChange={setCursorId} running={running} jobs={jobsForSubject} onRefresh={loadProject} readOnly={readOnly} canEdit={canEdit} canGenerate={canGenerate} canExport={canExport} features={features} />
           ) : null}
           {pview === 'music' ? <MusicPage projectId={id} chapters={chapters} running={running} onRefresh={loadProject} readOnly={readOnly} canEdit={canEdit} canGenerate={canGenerate} features={features} /> : null}
-          {pview === 'exports' ? <ExportsPage projectId={id} readOnly={readOnly} canExport={canExport} features={features} /> : null}
+          {pview === 'exports' ? <ExportsPage projectId={id} chapters={chapters} running={running} readOnly={readOnly} canExport={canExport} features={features} /> : null}
           {pview === 'logs' ? <LogsPage projectId={id} events={events} jobs={jobs} onRefresh={loadProject} readOnly={readOnly} /> : null}
         </section>
       </div>

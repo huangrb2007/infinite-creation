@@ -36,3 +36,12 @@ test('视频提示词是否带上了某句台词（忽略标点）', () => {
 test('改编规范包含旁白、转场、拆镜三块硬要求', () => {
   for (const k of ['内心OS', '建立镜头', '禁止硬切', 'narration 字段必须用起来', '固定声线']) assert.ok(ADAPTATION_RULES.includes(k), k);
 });
+
+test('{{资产名}} 占位符按实际参考顺序换成编号；没绑定的名字退回纯文字', async () => {
+  const { resolveNamedRefs, namedRefTokens } = await import('../lib/agent/adaptation-rules.js');
+  const refs = [{ type: 'image', name: '王胜' }, { type: 'image', name: '沈婉月' }, { type: 'image', name: '小区走廊' }, { type: 'audio', name: '王胜的声音' }];
+  const r = resolveNamedRefs('{{沈婉月}} clings to {{王胜}} in {{小区走廊}}; voice {{王胜的音色}}; {{路人}} passes', refs);
+  assert.strictEqual(r.prompt, '__MINIMAX_H3_REF_2__ clings to __MINIMAX_H3_REF_1__ in __MINIMAX_H3_REF_3__; voice __MINIMAX_H3_REF_4__; 路人 passes');
+  assert.deepStrictEqual(r.unresolved, ['路人']);
+  assert.deepStrictEqual(namedRefTokens('{{林冬}} and {{ 林冬 }} and {{手机}}'), ['林冬', '手机']);
+});

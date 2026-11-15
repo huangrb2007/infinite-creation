@@ -663,7 +663,7 @@ export default function ShotsPage({ projectId, chapters = [], cursorId, onCursor
                       <span className="inline-flex items-center gap-1">
                         <Clock size={11} className="opacity-70" />
                         {s.duration}s
-                        {!running && canEdit ? (
+                        {!['generating', 'queued', 'running'].includes(s.status) && canEdit ? (
                           <button
                             type="button"
                             title="修改视频时长"
@@ -787,7 +787,7 @@ export default function ShotsPage({ projectId, chapters = [], cursorId, onCursor
                   <div className="flex min-w-0 flex-col gap-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="section-label">参考素材</span>
-                      {!running && canEdit && features.buttons?.upload !== false && s.mode !== 'first_last' ? (
+                      {canEdit && !['generating', 'queued', 'running'].includes(s.status) && features.buttons?.upload !== false && s.mode !== 'first_last' ? (
                         <div className="flex flex-wrap gap-1">
                           {[
                             ['character', '角色'],
@@ -847,19 +847,19 @@ export default function ShotsPage({ projectId, chapters = [], cursorId, onCursor
                     ) : chars.length || scenes.length || props.length || costumes.length || ages.length || voices.length || audios.length ? (
                       <div className="flex flex-wrap gap-2">
                         {shownChars.map((a) => (
-                          <RefThumb key={a.id} projectId={projectId} a={a} onPreview={setPreview} onReplace={!running && canEdit && features.buttons?.upload !== false ? () => openMaterial(s.id, 'character', 'replace', a.id) : null} onRemove={!running && canEdit && features.buttons?.upload !== false ? () => removeMaterial(s.id, 'character', a.id) : null} />
+                          <RefThumb key={a.id} projectId={projectId} a={a} onPreview={setPreview} onReplace={!['generating', 'queued', 'running'].includes(s.status) && canEdit && features.buttons?.upload !== false ? () => openMaterial(s.id, 'character', 'replace', a.id) : null} onRemove={!['generating', 'queued', 'running'].includes(s.status) && canEdit && features.buttons?.upload !== false ? () => removeMaterial(s.id, 'character', a.id) : null} />
                         ))}
                         {scenes.map((a) => (
-                          <RefThumb key={a.id} projectId={projectId} a={a} onPreview={setPreview} onReplace={!running && canEdit && features.buttons?.upload !== false ? () => openMaterial(s.id, 'scene', 'replace', a.id) : null} onRemove={!running && canEdit && features.buttons?.upload !== false ? () => removeMaterial(s.id, 'scene', a.id) : null} />
+                          <RefThumb key={a.id} projectId={projectId} a={a} onPreview={setPreview} onReplace={!['generating', 'queued', 'running'].includes(s.status) && canEdit && features.buttons?.upload !== false ? () => openMaterial(s.id, 'scene', 'replace', a.id) : null} onRemove={!['generating', 'queued', 'running'].includes(s.status) && canEdit && features.buttons?.upload !== false ? () => removeMaterial(s.id, 'scene', a.id) : null} />
                         ))}
                         {props.map((a) => (
-                          <RefThumb key={a.id} projectId={projectId} a={a} onPreview={setPreview} onReplace={!running && canEdit && features.buttons?.upload !== false ? () => openMaterial(s.id, 'prop', 'replace', a.id) : null} onRemove={!running && canEdit && features.buttons?.upload !== false ? () => removeMaterial(s.id, 'prop', a.id) : null} />
+                          <RefThumb key={a.id} projectId={projectId} a={a} onPreview={setPreview} onReplace={!['generating', 'queued', 'running'].includes(s.status) && canEdit && features.buttons?.upload !== false ? () => openMaterial(s.id, 'prop', 'replace', a.id) : null} onRemove={!['generating', 'queued', 'running'].includes(s.status) && canEdit && features.buttons?.upload !== false ? () => removeMaterial(s.id, 'prop', a.id) : null} />
                         ))}
                         {costumes.map((a) => (
-                          <RefThumb key={a.id} projectId={projectId} a={a} onPreview={setPreview} onReplace={!running && canEdit && features.buttons?.upload !== false ? () => openMaterial(s.id, 'costume', 'replace', a.id) : null} onRemove={!running && canEdit && features.buttons?.upload !== false ? () => removeMaterial(s.id, 'costume', a.id) : null} />
+                          <RefThumb key={a.id} projectId={projectId} a={a} onPreview={setPreview} onReplace={!['generating', 'queued', 'running'].includes(s.status) && canEdit && features.buttons?.upload !== false ? () => openMaterial(s.id, 'costume', 'replace', a.id) : null} onRemove={!['generating', 'queued', 'running'].includes(s.status) && canEdit && features.buttons?.upload !== false ? () => removeMaterial(s.id, 'costume', a.id) : null} />
                         ))}
                         {shownAges.map((a) => (
-                          <RefThumb key={a.id} projectId={projectId} a={a} onPreview={setPreview} onReplace={!running && canEdit && features.buttons?.upload !== false ? () => openMaterial(s.id, 'age', 'replace', a.id) : null} onRemove={!running && canEdit && features.buttons?.upload !== false ? () => removeMaterial(s.id, 'age', a.id) : null} />
+                          <RefThumb key={a.id} projectId={projectId} a={a} onPreview={setPreview} onReplace={!['generating', 'queued', 'running'].includes(s.status) && canEdit && features.buttons?.upload !== false ? () => openMaterial(s.id, 'age', 'replace', a.id) : null} onRemove={!['generating', 'queued', 'running'].includes(s.status) && canEdit && features.buttons?.upload !== false ? () => removeMaterial(s.id, 'age', a.id) : null} />
                         ))}
                         {voices.map((v, i) => (
                           <div key={'voice_' + i} className="flex w-[150px] flex-col gap-1 rounded-lg border border-[var(--line)] bg-white/[0.02] p-1.5">
@@ -876,7 +876,7 @@ export default function ShotsPage({ projectId, chapters = [], cursorId, onCursor
                             )}
                             <span className="flex items-center justify-between gap-1">
                               <span className="truncate text-[10px] text-[var(--fg-3)]">{a.name}</span>
-                              {!running && canEdit && features.buttons?.upload !== false ? (
+                              {!['generating', 'queued', 'running'].includes(s.status) && canEdit && features.buttons?.upload !== false ? (
                                 <span className="flex shrink-0 gap-0.5">
                                   <button type="button" className="rounded px-1 text-[10px] text-[var(--fg-3)] hover:text-[var(--fg)]" onClick={() => openMaterial(s.id, 'audio', 'replace', a.id)}>
                                     替换
@@ -908,7 +908,7 @@ export default function ShotsPage({ projectId, chapters = [], cursorId, onCursor
                         <div>
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-[var(--fg-4)]">视频提示词</span>
-                            {!running && canEdit && editPrompt?.shotId !== s.id ? (
+                            {!['generating', 'queued', 'running'].includes(s.status) && canEdit && editPrompt?.shotId !== s.id ? (
                               <button
                                 type="button"
                                 className="rounded px-1 text-[10.5px] text-[var(--accent)] transition-colors hover:underline"
