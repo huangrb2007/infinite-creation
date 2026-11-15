@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { api } from '../lib/api.js';
-import { STYLE_OPTIONS, STYLE_CUSTOM, resolveStyle, splitStyle, VIDEO_RESOLUTION_CUSTOM } from '../lib/shared.js';
+import { STYLE_CUSTOM, resolveStyle, splitStyle, VIDEO_RESOLUTION_CUSTOM } from '../lib/shared.js';
+import StylePicker from './StylePicker.jsx';
 import { RESOLUTION_SELECT_ITEMS, RATIO_SELECT_ITEMS } from './visuals.jsx';
 import { Button, Field, Input, Select, Switch } from './ui.jsx';
 import { FormSection, Modal } from './overlays.jsx';
@@ -84,20 +85,8 @@ export default function ProjectSettingsDialog({ open, onOpenChange, project, onS
             <Input value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
           <Field label="画面风格">
-            <div className="flex flex-wrap gap-1.5">
-              <StyleChip active={styleSel === ''} onClick={() => setStyleSel('')}>
-                不指定
-              </StyleChip>
-              {STYLE_OPTIONS.map((s) => (
-                <StyleChip key={s} active={styleSel === s} onClick={() => setStyleSel(s)}>
-                  {s}
-                </StyleChip>
-              ))}
-            </div>
+            <StylePicker value={resolveStyle(styleSel, customStyle)} onChange={(v) => { const sp = splitStyle(v); setStyleSel(v ? (sp.sel || STYLE_CUSTOM) : ''); setCustomStyle(sp.sel === STYLE_CUSTOM || !sp.sel ? v : ''); }} />
           </Field>
-          {styleSel === STYLE_CUSTOM ? (
-            <Input value={customStyle} onChange={(e) => setCustomStyle(e.target.value)} placeholder="请填写自定义风格" />
-          ) : null}
         </FormSection>
 
         <div className="hairline" />

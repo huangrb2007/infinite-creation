@@ -1,5 +1,5 @@
 // 单一事实来源：常量与纯函数直接复用主仓库 lib/shared，避免工作室与老界面各写一份而漂移。
-import { VIDEO_RESOLUTION_OPTIONS, VIDEO_RESOLUTION_CUSTOM, VIDEO_ASPECT_RATIOS } from '@shared';
+import { VIDEO_RESOLUTION_OPTIONS, VIDEO_RESOLUTION_CUSTOM, VIDEO_ASPECT_RATIOS, STYLE_LIBRARY } from '@shared';
 
 export {
   ASSET_CATEGORIES,
@@ -34,7 +34,7 @@ export const VIDEO_RESOLUTION_ITEMS = VIDEO_RESOLUTION_OPTIONS.map((v) => ({
 }));
 export const VIDEO_RATIO_ITEMS = VIDEO_ASPECT_RATIOS.map((r) => ({ value: r, label: r }));
 
-export const STYLE_PRESETS = ['真人写实', '动漫', '国漫', '日系动漫风', '卡通', 'Q版卡通风', '国风玄幻'];
+export const STYLE_PRESETS = STYLE_LIBRARY.map((x) => x.name);
 export const STYLE_CUSTOM = '自定义风格';
 export const STYLE_OPTIONS = [...STYLE_PRESETS, STYLE_CUSTOM];
 

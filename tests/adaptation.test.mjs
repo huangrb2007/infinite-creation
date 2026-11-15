@@ -45,3 +45,30 @@ test('{{资产名}} 占位符按实际参考顺序换成编号；没绑定的名
   assert.deepStrictEqual(r.unresolved, ['路人']);
   assert.deepStrictEqual(namedRefTokens('{{林冬}} and {{ 林冬 }} and {{手机}}'), ['林冬', '手机']);
 });
+
+test('精简模式：按模板自动拼视频提示词——台词、内心独白、旁白、系统音各有固定写法，顺序跟 lines 一致', async () => {
+  const { composeVideoPrompt, splitLines, parseVoiceLine, promptHasLine } = await import('../lib/agent/adaptation-rules.js');
+  const lines = '沈婉月（嫌恶）：离我远点！\n林冬（内心OS）：算了。\n旁白：他知道，麻烦才刚开始。\n系统（画外音）：倒计时五小时。\n司机（画外音，暴躁）：滚远点！';
+  const p = composeVideoPrompt(
+    { duration: 9, visual: '夜，电梯厅。', sub_shots: '0-4s：双人中景。', lines },
+    { characters: [{ name: '林冬', voice_desc: '青年男性，低沉' }, { name: '沈婉月', voice_desc: '青年女性，尖亮' }], scenes: [{ name: '电梯厅' }], style: '国漫' },
+  );
+  for (const l of ['离我远点！', '算了。', '他知道，麻烦才刚开始。', '倒计时五小时。', '滚远点！']) assert.ok(promptHasLine(p, l), l);
+  assert.ok(p.indexOf('离我远点') < p.indexOf('算了') && p.indexOf('算了') < p.indexOf('他知道'));
+  assert.ok(/沈婉月 speaks aloud with lip sync \(voice reference \{\{沈婉月的声音\}\}.*tone: 嫌恶/.test(p));
+  assert.ok(/Inner-thought voice-over of 林冬, his or her lips stay closed/.test(p));
+  assert.ok(/Off-screen narrator voice-over/.test(p) && /Off-screen synthetic system voice/.test(p));
+  assert.ok(p.includes('{{林冬}}') && p.includes('{{电梯厅}}'));
+  assert.ok(!/是沈婉月/.test(p)); // 中文说明句会被模型念出来
+  assert.deepStrictEqual(splitLines(lines), { dialogue: '沈婉月（嫌恶）：离我远点！', narration: '林冬（内心OS）：算了。\n旁白：他知道，麻烦才刚开始。\n系统（画外音）：倒计时五小时。\n司机（画外音，暴躁）：滚远点！' });
+  assert.strictEqual(parseVoiceLine('司机（画外音，暴躁）：滚远点！').emotion, '暴躁');
+});
+
+test('画风库：名字展开成风格关键词，自定义风格不展开', async () => {
+  const { STYLE_LIBRARY, styleDetail } = await import('../lib/shared/index.js');
+  const fs = await import('node:fs');
+  assert.ok(STYLE_LIBRARY.length >= 12);
+  assert.ok(styleDetail('YHKT科幻国漫').includes('3D'));
+  assert.strictEqual(styleDetail('我自己写的风格'), '');
+  for (const s of STYLE_LIBRARY) assert.ok(fs.existsSync(new URL('../studio/public/styles/' + s.id + '.jpg', import.meta.url)), s.id + ' 缺预览图');
+});

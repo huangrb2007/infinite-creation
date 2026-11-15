@@ -42,6 +42,14 @@ npm install --omit=dev --os=win32 --cpu=x64 --no-audit --no-fund
 # 运行时不需要 SWC 编译器（只有构建时用），去掉省 140MB
 rm -rf node_modules/@next/swc-*
 
+# 体积大、几乎不变的静态内容（Agent 内核、代码电影素材库、示例媒体）归到「运行环境」那一层：
+# 升级包不带它们，完整包在标识没变时也跳过。source map 不随包分发。
+find "$STAGE/app" -name '*.map' -not -path '*/node_modules/*' -delete
+mkdir -p "$STAGE/heavy/skills" "$STAGE/heavy/public"
+mv "$STAGE/app/vendor" "$STAGE/heavy/"
+[ -d "$STAGE/app/skills/lemo-opuscar" ] && mv "$STAGE/app/skills/lemo-opuscar" "$STAGE/heavy/skills/"
+[ -d "$STAGE/app/public/samples" ] && mv "$STAGE/app/public/samples" "$STAGE/heavy/public/"
+
 echo "[4/5] 下载便携 Node 与 ffmpeg"
 cd "$WORK/dl"
 [ -f node.zip ] || curl -sSLo node.zip "https://nodejs.org/dist/$NODE_VER/node-$NODE_VER-win-x64.zip"
@@ -56,5 +64,12 @@ echo "[5/5] 生成安装包"
 cd "$ROOT/packaging/windows"
 makensis -V2 -DVERSION="$VERSION" -DMODE=start -DOUTFILE="$STAGE/DuanjuStudio.exe" launch-stub.nsi
 makensis -V2 -DVERSION="$VERSION" -DMODE=stop -DOUTFILE="$STAGE/DuanjuStudio-stop.exe" launch-stub.nsi
-makensis -V2 -DVERSION="$VERSION" -DSTAGE="$STAGE" -DOUTFILE="$ROOT/dist/DuanjuStudio-Setup-$VERSION.exe" installer.nsi
-echo "完成：$ROOT/dist/DuanjuStudio-Setup-$VERSION.exe"
+# 运行环境标识：Node 版本 + ffmpeg 版本 + 实际装进去的依赖清单。标识没变 = 升级时不用重装那 5 万个文件
+FF_VER="$(ls -d "$WORK"/dl/ffmpeg-*/ | head -1 | xargs basename)"
+RUNTIME_SIG="$( { echo "$NODE_VER"; echo "$FF_VER"; (cd "$STAGE/app/node_modules" && find . -name package.json -maxdepth 3 | sort | xargs grep -h '"version"' 2>/dev/null); (cd "$STAGE/heavy" && find . -type f -printf '%p %s\n' | sort); } | sha256sum | cut -c1-16)"
+echo "运行环境标识：$RUNTIME_SIG"
+makensis -V2 -DVERSION="$VERSION" -DSTAGE="$STAGE" -DRUNTIME_SIG="$RUNTIME_SIG" -DOUTFILE="$ROOT/dist/DuanjuStudio-Setup-$VERSION.exe" installer.nsi
+# 升级包：只有程序文件，装在已有的完整安装之上（运行环境标识一致才允许）
+makensis -V2 -DVERSION="$VERSION" -DSTAGE="$STAGE" -DRUNTIME_SIG="$RUNTIME_SIG" -DUPDATE=1 -DOUTFILE="$ROOT/dist/DuanjuStudio-Update-$VERSION.exe" installer.nsi
+ls -la "$ROOT"/dist/*.exe
+echo "完成：$ROOT/dist/DuanjuStudio-Setup-$VERSION.exe 与 DuanjuStudio-Update-$VERSION.exe"

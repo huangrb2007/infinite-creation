@@ -1,15 +1,28 @@
 // 生成视频：把小说（大纲 + 分卷 + 角色 + 章节正文）迁移成一个 type=agent 项目，进入小说→视频流水线
 import { NextResponse } from 'next/server';
-import { Projects, Chapters, Assets, withWriteContext, loadNovelState, buildImportDocument } from '@/lib/core/index.js';
+import { Projects, Chapters, Assets, withWriteContext, loadNovelState, buildImportDocument, loadConfig } from '@/lib/core/index.js';
+import { voiceStats, sceneCount } from '@/lib/agent/adaptation-rules.js';
+import { startCreateAllJobs } from '@/lib/agent/index.js';
+import { broadcast } from '@/lib/ws.js';
+
+// 章节正文已经是剧本格式（有场次、或大半是「人物：台词」行）→ 直接当剧本用，短剧那边不再改写一遍
+function looksLikeScript(text) {
+  const t = String(text || '');
+  if (sceneCount(t) >= 1) return true;
+  const v = voiceStats(t);
+  return v.dialogueLines.length + v.narrationLines.length >= 6 && (v.dialogue + v.narration) >= t.length * 0.5;
+}
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(_req, { params }) {
+export async function POST(req, { params }) {
   const { id } = await params;
   const p = Projects.get(id);
   if (!p) return NextResponse.json({ error: '项目不存在' }, { status: 404 });
   if (p.type !== 'novel') return NextResponse.json({ error: '这不是小说项目' }, { status: 400 });
 
+  const body = await req.json().catch(() => ({}));
+  const defaults = loadConfig().projectDefaults || {};
   const state = loadNovelState(id);
   // 按章节顺序（seq）迁移，只迁移已写正文的章节
   const chapters = Chapters.list(id).filter((c) => String(c.novel || '').trim());
@@ -22,7 +35,15 @@ export async function POST(_req, { params }) {
       idea: String(p.idea || ''),
       auto_script: true,
       // 一次性按章节建好，避免先建「第1章」再追加造成空章节 / 重复章节
-      chapters: chapters.map((c) => ({ title: c.title, novel: c.novel })),
+      // 画风、分辨率等用「设置 → 新建项目默认配置」里的值，一键出片不用再进项目设置
+      style: String(body?.style || p.style || defaults.style || ''),
+      video_resolution: defaults.resolution || '480P',
+      video_aspect_ratio: defaults.aspectRatio || '16:9',
+      video_width: Number(defaults.width) || 0,
+      video_height: Number(defaults.height) || 0,
+      enable_bgm: defaults.enableBgm !== false,
+      enable_subtitles: defaults.enableSubtitles !== false,
+      chapters: chapters.map((c) => (looksLikeScript(c.novel) ? { title: c.title, novel: c.novel, script: c.novel } : { title: c.title, novel: c.novel })),
     });
     newId = newProj.id;
 
@@ -54,5 +75,16 @@ export async function POST(_req, { params }) {
     }
   });
 
-  return NextResponse.json({ id: newId, name: Projects.get(newId)?.name, chapters: chapters.length, characters: state.characters.length });
+  // 一键出片：迁移完直接把全部章节的整条流水线跑起来（剧本 → 资产 → 分镜 → 视频 → 成片）
+  let started = 0;
+  if (body?.run === true && chapters.length) {
+    try {
+      Projects.update(newId, { status: 'running' });
+      started = startCreateAllJobs({ projectId: newId, chapters: chapters.map((c) => c.title), onProgress: (patch) => broadcast(patch) }).length;
+    } catch (e) {
+      Projects.update(newId, { status: 'idle' });
+      return NextResponse.json({ id: newId, name: Projects.get(newId)?.name, chapters: chapters.length, characters: state.characters.length, runError: e.message });
+    }
+  }
+  return NextResponse.json({ id: newId, name: Projects.get(newId)?.name, chapters: chapters.length, characters: state.characters.length, started });
 }

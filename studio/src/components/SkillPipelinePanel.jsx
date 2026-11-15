@@ -317,9 +317,20 @@ export default function SkillPipelinePanel({ cfg, setCfg, setSavedCfg, onlyNode 
   }, [pickerAll, query, showAll]);
   const hiddenCount = pickerAll.length - pickerOptions.length;
 
+  const useSkills = cfg?.skillPipeline?.useSkills === true;
   return (
     <div className="flex flex-col gap-4">
-      <div className="toolbar">
+      {!onlyNode ? (
+        <div className="rounded-xl border border-[var(--line)] bg-white/[0.02] p-3">
+          <Switch
+            checked={useSkills}
+            onChange={(v) => setCfg((c) => ({ ...c, skillPipeline: { ...(c.skillPipeline || {}), useSkills: v } }))}
+            label="使用技能文档（高级）"
+            hint="默认关闭 = 精简模式：不加载任何技能，用内置规范写剧本和分镜，视频提示词由应用自动生成（台词、旁白、人物参考一句不漏，动作从简）。更快、更稳。打开后才按下面的编排加载技能，由 LLM 逐镜写提示词。"
+          />
+        </div>
+      ) : null}
+      <div className={'toolbar' + (!onlyNode && !useSkills ? ' opacity-50' : '')}>
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex h-6 items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--accent)_28%,transparent)] bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] px-2.5 text-[11px] font-medium text-[var(--accent)]">
             <Workflow size={11} /> {onlyNode && metas[0] ? metas[0].label + ' · 小说技能' : metas.length + ' 个环节'}

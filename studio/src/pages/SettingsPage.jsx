@@ -1,3 +1,4 @@
+import StylePicker from '../components/StylePicker.jsx';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
@@ -456,6 +457,9 @@ export default function SettingsPage({ onBack, publicMode = false }) {
               </Section>
 
               <Section icon={SlidersHorizontal} title="新建项目默认配置" description="创建新项目时表单的默认值；保存后对新创建的项目生效，不影响已有项目。">
+                <Field label="默认画风" hint="新建项目和「无限卷轴 → 一键出片」默认用这个画风">
+                  <StylePicker value={defaults.style || ''} onChange={(v) => setDefaults({ style: v })} />
+                </Field>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="默认分辨率">
                     <Select

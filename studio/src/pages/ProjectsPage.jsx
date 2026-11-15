@@ -1,3 +1,4 @@
+import StylePicker from '../components/StylePicker.jsx';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { ArrowUpRight, Clapperboard, Film, Image as ImageIcon, Layers, Plus, Sparkles, Trash2, Upload } from 'lucide-react';
@@ -7,6 +8,7 @@ import {
   STYLE_OPTIONS,
   STYLE_CUSTOM,
   resolveStyle,
+  splitStyle,
   VIDEO_RESOLUTION_CUSTOM,
   PROJECT_TYPE_LABEL,
 } from '../lib/shared.js';
@@ -121,6 +123,8 @@ export default function ProjectsPage({ onOpen, type = '', showTypeFilter = false
       return {
         ...f,
         scriptMode: defaults.autoScript === false ? 'own' : f.scriptMode,
+        style: defaults.style ? (splitStyle(defaults.style).sel || STYLE_CUSTOM) : f.style,
+        customStyle: defaults.style && splitStyle(defaults.style).sel === STYLE_CUSTOM ? defaults.style : f.customStyle,
         res: defaults.resolution || f.res,
         ratio: defaults.aspectRatio || f.ratio,
         cw: defaults.width ? String(defaults.width) : f.cw,
@@ -620,23 +624,10 @@ export default function ProjectsPage({ onOpen, type = '', showTypeFilter = false
           <div className="hairline" />
 
           <FormSection index="02" title="画面风格" description="可留空，由 Agent 根据故事推断">
-            <div className="flex flex-wrap gap-1.5">
-              <StyleChip active={form.style === ''} onClick={() => setForm({ ...form, style: '' })}>
-                不指定
-              </StyleChip>
-              {STYLE_OPTIONS.map((s) => (
-                <StyleChip key={s} active={form.style === s} onClick={() => setForm({ ...form, style: s })}>
-                  {s}
-                </StyleChip>
-              ))}
-            </div>
-            {form.style === STYLE_CUSTOM ? (
-              <Input
-                value={form.customStyle}
-                onChange={(e) => setForm({ ...form, customStyle: e.target.value })}
-                placeholder="描述自定义风格，例如：水墨写意、低饱和胶片颗粒"
-              />
-            ) : null}
+            <StylePicker
+              value={resolveStyle(form.style, form.customStyle)}
+              onChange={(v) => { const sp = splitStyle(v); setForm({ ...form, style: v ? (sp.sel || STYLE_CUSTOM) : '', customStyle: sp.sel === STYLE_CUSTOM || !sp.sel ? v : '' }); }}
+            />
           </FormSection>
 
           <div className="hairline" />

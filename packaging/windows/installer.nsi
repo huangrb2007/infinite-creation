@@ -1,10 +1,21 @@
 ; 短剧制作 Studio · Windows 安装包（NSIS，可在 Linux 上用 makensis 构建）
 ; 构建：makensis -DVERSION=0.2.0 -DSTAGE=<staging 目录> -DOUTFILE=<输出 exe> installer.nsi
-; staging 目录结构：app\  node\node.exe  bin\ffmpeg.exe bin\ffprobe.exe
+; staging 目录结构：app\（程序文件）  heavy\（大体积静态内容，装到 app\ 下）  node\node.exe  bin\ffmpeg.exe bin\ffprobe.exe
+; 加 -DUPDATE=1 生成只含程序文件的升级包
 Unicode true
 ManifestDPIAware true
-SetCompressor /SOLID lzma
+; 完整包不用 solid 压缩：升级时运行环境（Node、ffmpeg、node_modules，约 5 万个文件）没变就整段跳过，
+; solid 压缩下跳过也得把前面的数据解一遍，快不起来。升级包只有程序文件，用 solid 压得更小。
+!ifdef UPDATE
+  SetCompressor /SOLID lzma
+!else
+  SetCompressor lzma
+!endif
 SetCompressorDictSize 64
+
+!ifndef RUNTIME_SIG
+  !define RUNTIME_SIG "dev"
+!endif
 
 !ifndef VERSION
   !define VERSION "0.0.0"
@@ -14,6 +25,7 @@ SetCompressorDictSize 64
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPKEY}"
 
 !include "MUI2.nsh"
+!include "LogicLib.nsh"
 
 Name "${APPNAME}"
 OutFile "${OUTFILE}"
@@ -38,7 +50,9 @@ VIAddVersionKey "LegalCopyright" "MIT · 基于 SwotAtmk/infinite-creation"
 !define MUI_FINISHPAGE_RUN_FUNCTION LaunchApp
 
 !insertmacro MUI_PAGE_WELCOME
-!insertmacro MUI_PAGE_DIRECTORY
+!ifndef UPDATE
+  !insertmacro MUI_PAGE_DIRECTORY
+!endif
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -49,20 +63,78 @@ Function LaunchApp
   ExecShell "open" "$INSTDIR\${APPKEY}.exe"
 FunctionEnd
 
+; 读已安装版本的运行环境标识（Node 版本 + ffmpeg 版本 + 依赖清单的摘要），放进 $1；没有则为空
+Function ReadRuntimeSig
+  StrCpy $1 ""
+  IfFileExists "$INSTDIR\runtime.sig" 0 done
+  ClearErrors
+  FileOpen $0 "$INSTDIR\runtime.sig" r
+  IfErrors done
+  FileRead $0 $1
+  FileClose $0
+  done:
+FunctionEnd
+
+!ifdef UPDATE
+Function .onInit
+  ; 升级包只换程序文件，必须装在已有的完整安装之上，而且运行环境要和这个版本一致
+  ReadRegStr $0 HKCU "Software\${APPKEY}" "InstallDir"
+  ${If} $0 == ""
+    MessageBox MB_ICONSTOP "没有找到已安装的${APPNAME}。$\r$\n请下载完整安装包 DuanjuStudio-Setup-${VERSION}.exe 安装。"
+    Abort
+  ${EndIf}
+  StrCpy $INSTDIR $0
+  Call ReadRuntimeSig
+  ${If} $1 != "${RUNTIME_SIG}"
+    MessageBox MB_ICONSTOP "这个升级包和已安装版本的运行环境不一致（依赖有更新，或者你装的是 0.2.10 及更早的版本）。$\r$\n请下载完整安装包 DuanjuStudio-Setup-${VERSION}.exe 安装一次，之后就可以用升级包了。"
+    Abort
+  ${EndIf}
+FunctionEnd
+!endif
+
 Section "主程序" SecMain
   SectionIn RO
   ; 升级安装前先停掉正在运行的旧版本
   IfFileExists "$INSTDIR\node\node.exe" 0 +2
     nsExec::Exec '"$INSTDIR\node\node.exe" "$INSTDIR\app\packaging\launcher.mjs" --stop'
   Sleep 1500
-  ; 旧版本的程序文件整体替换（用户数据在 %LOCALAPPDATA%\DuanjuStudio，不受影响）
+
+  ; —— 程序文件（每次都换，约 2700 个文件）——
+  ; 只清掉会留下旧文件的几个目录；用户数据在 %LOCALAPPDATA%\DuanjuStudio，自己装的技能在 app\skills，都不动
   RMDir /r "$INSTDIR\app\.next"
-  RMDir /r "$INSTDIR\app\node_modules"
+  RMDir /r "$INSTDIR\app\app"
+  RMDir /r "$INSTDIR\app\lib"
+  RMDir /r "$INSTDIR\app\studio"
+  SetOutPath "$INSTDIR\app"
+  File /r /x node_modules "${STAGE}\app\*.*"
+
+!ifndef UPDATE
+  ; —— 运行环境（Node、ffmpeg、node_modules，约 5 万个文件）：和已安装的一样就整段跳过 ——
+  Call ReadRuntimeSig
+  ${If} $1 == "${RUNTIME_SIG}"
+  ${AndIf} ${FileExists} "$INSTDIR\node\node.exe"
+  ${AndIf} ${FileExists} "$INSTDIR\bin\ffmpeg.exe"
+  ${AndIf} ${FileExists} "$INSTDIR\app\node_modules\next\package.json"
+    DetailPrint "运行环境没有变化，跳过（只更新程序文件）"
+  ${Else}
+    DetailPrint "安装运行环境（首次安装或依赖有更新，需要几分钟）"
+    Delete "$INSTDIR\runtime.sig"
+    RMDir /r "$INSTDIR\app\node_modules"
+    SetOutPath "$INSTDIR\app"
+    File /r "${STAGE}\app\node_modules"
+    ; Agent 内核、代码电影素材库、示例媒体：体积大、几乎不变，和运行环境一起装
+    RMDir /r "$INSTDIR\app\vendor"
+    File /r "${STAGE}\heavy\*.*"
+    SetOutPath "$INSTDIR"
+    File /r "${STAGE}\node"
+    File /r "${STAGE}\bin"
+    FileOpen $0 "$INSTDIR\runtime.sig" w
+    FileWrite $0 "${RUNTIME_SIG}"
+    FileClose $0
+  ${EndIf}
+!endif
 
   SetOutPath "$INSTDIR"
-  File /r "${STAGE}\app"
-  File /r "${STAGE}\node"
-  File /r "${STAGE}\bin"
   File "${STAGE}\${APPKEY}.exe"
   File "${STAGE}\${APPKEY}-stop.exe"
 
@@ -91,6 +163,7 @@ Section "Uninstall"
   RMDir /r "$INSTDIR\bin"
   Delete "$INSTDIR\${APPKEY}.exe"
   Delete "$INSTDIR\${APPKEY}-stop.exe"
+  Delete "$INSTDIR\runtime.sig"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
   Delete "$DESKTOP\${APPNAME}.lnk"

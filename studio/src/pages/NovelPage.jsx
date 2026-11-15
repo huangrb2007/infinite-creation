@@ -253,11 +253,12 @@ export default function NovelPage({ onOpenAgentProject }) {
     }
   }
 
-  async function importToAgent() {
+  async function importToAgent(run = false) {
     if (!selected) return;
     try {
-      const r = await api.post('/api/projects/' + selected.id + '/novel/import');
-      toast.success('已创建视频项目：' + r.name + `（迁移 ${r.chapters || 0} 章 / ${r.characters || 0} 个角色）`);
+      const r = await api.post('/api/projects/' + selected.id + '/novel/import', { run: run === true });
+      if (r.runError) toast.error('已创建视频项目，但没能自动开跑：' + r.runError);
+      else toast.success('已创建视频项目：' + r.name + `（迁移 ${r.chapters || 0} 章 / ${r.characters || 0} 个角色）` + (r.started ? '，已开始全自动出片' : ''));
       if (onOpenAgentProject) onOpenAgentProject(r.id);
     } catch (e) {
       toast.error('小说转视频失败：' + (e?.message || String(e)));
@@ -370,8 +371,11 @@ export default function NovelPage({ onOpenAgentProject }) {
             <Button variant="ghost" size="sm" onClick={() => setSelected(null)}>← 返回列表</Button>
             <Button variant="ghost" size="sm" onClick={openEditInfo}><Feather size={12} />编辑信息</Button>
             {running ? <Button variant="ghost" size="sm" onClick={stopJob}><Square size={12} />停止生成</Button> : null}
-            <Button size="sm" onClick={importToAgent} title="把当前小说的章节正文、大纲、角色设定迁移到短剧制作，开始生成视频">
+            <Button size="sm" variant="secondary" onClick={() => importToAgent(false)} title="把当前小说的章节正文、大纲、角色设定迁移到短剧制作，进去后自己点生成">
               <Sparkles size={12} />小说转视频
+            </Button>
+            <Button size="sm" onClick={() => importToAgent(true)} title="迁移到短剧制作并立刻全自动出片：剧本 → 资产 → 分镜 → 视频 → 成片，中途不用再点">
+              <Sparkles size={12} />一键出片
             </Button>
           </div>
         }
