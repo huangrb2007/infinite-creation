@@ -47,14 +47,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: 短剧制作 Studio ${{ steps.ver.outputs.version }}
-          files: dist/DuanjuStudio-Setup-${{ steps.ver.outputs.version }}.exe
+          files: |
+            dist/DuanjuStudio-Setup-${{ steps.ver.outputs.version }}.exe
+            dist/DuanjuStudio-Update-${{ steps.ver.outputs.version }}.exe
           body: |
-            Windows 安装包：下载 `DuanjuStudio-Setup-${{ steps.ver.outputs.version }}.exe`，双击安装，不需要管理员权限。
-            安装包未签名，Windows 提示「已保护你的电脑」时点「更多信息」→「仍要运行」。
+            **已经装过 0.2.11 或更新版本**：下载 `DuanjuStudio-Update-${{ steps.ver.outputs.version }}.exe`（升级包，只换程序文件，几秒装完）。它提示「运行环境不一致」时，改用下面的完整安装包。
+            **第一次安装，或从 0.2.10 及更早版本升级**：下载 `DuanjuStudio-Setup-${{ steps.ver.outputs.version }}.exe`（完整安装包）。以后再用完整包升级时，运行环境没变也会自动跳过，只更新程序文件。
+            不需要管理员权限。安装包未签名，Windows 提示「已保护你的电脑」时点「更多信息」→「仍要运行」。
 
       - name: 上传构建产物（手动运行时）
         if: github.event_name != 'push'
         uses: actions/upload-artifact@v4
         with:
           name: DuanjuStudio-Setup-${{ steps.ver.outputs.version }}
-          path: dist/DuanjuStudio-Setup-${{ steps.ver.outputs.version }}.exe
+          path: dist/DuanjuStudio-*-${{ steps.ver.outputs.version }}.exe
