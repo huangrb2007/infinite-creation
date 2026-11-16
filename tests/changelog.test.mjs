@@ -1501,3 +1501,21 @@ test('generate_asset_from_reference 工具：变体缺 parent_id 在落盘/出�
   );
   Projects.remove(p.id);
 });
+
+test('set_storyboard：开口说话的人必须有角色资产；画面里有屏幕 / 光幕必须绑道具', async () => {
+  const p = mkProject('分镜缺资产校验项目');
+  const ctx = createToolRuntime({ projectId: p.id, chapter: '第1章' });
+  await runTool(ctx, 'create_asset', { category: 'character', name: '林冬' });
+  await assert.rejects(
+    () => runTool(ctx, 'set_storyboard', { shots: [{ idx: 1, visual: '路口', dialogue: '面包车司机（怒骂）：滚远点！', characters: ['林冬'], duration: 4 }] }),
+    /没有角色资产/,
+  );
+  await assert.rejects(
+    () => runTool(ctx, 'set_storyboard', { shots: [{ idx: 1, visual: '他胸前浮出四格光幕', characters: ['林冬'], duration: 5 }] }),
+    /屏幕 \/ 界面 \/ 光幕/,
+  );
+  await runTool(ctx, 'create_asset', { category: 'prop', name: '系统光幕-四个选项' });
+  await runTool(ctx, 'set_storyboard', { shots: [{ idx: 1, visual: '他胸前浮出四格光幕', characters: ['林冬'], props: ['系统光幕-四个选项'], narration: '面包车司机（画外音）：滚远点！', duration: 5 }] });
+  assert.equal(Shots.list(p.id).length, 1);
+  Projects.remove(p.id);
+});

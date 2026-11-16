@@ -39,7 +39,7 @@ test('技能模式：画风选视觉档位；适配说明只讲接口（花括�
   assert.equal(visualTierOf('写实真人电影'), '真人电影档');
   assert.equal(visualTierOf('二次元三渲二'), '游戏内三渲二实机建模档');
   const t = buildSkillAdapter({ style: 'YHKT科幻国漫', styleDetailText: '', webSearch: false });
-  for (const k of ['{{林冬}}', '{{林冬的声音}}', 'Ref2VA', '不要停下来提问', 'update_shot', '正右侧全身']) assert.ok(t.includes(k), k);
+  for (const k of ['{{林冬}}', '{{林冬的声音}}', 'Ref2VA', '不要停下来提问', 'update_shot', '左侧 1/3', 'lips remain completely closed']) assert.ok(t.includes(k), k);
   assert.ok(!/30%|建立镜头|禁止硬切/.test(t));
 });
 
