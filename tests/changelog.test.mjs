@@ -1540,3 +1540,17 @@ test('set_storyboard：旁白 / 系统音 / 只闻其声的人自动绑上同名
   assert.deepEqual(names, ['旁白音色', '赵雨菲']);
   Projects.remove(p.id);
 });
+
+test('set_storyboard：有系统台词的段落必须绑定系统光幕道具', async () => {
+  const p = mkProject('系统光幕校验项目');
+  const ctx = createToolRuntime({ projectId: p.id, chapter: '第1章' });
+  await runTool(ctx, 'create_asset', { category: 'character', name: '林冬' });
+  await assert.rejects(
+    () => runTool(ctx, 'set_storyboard', { shots: [{ idx: 1, visual: '江边', characters: ['林冬'], narration: '系统（画外音）：末世签到系统绑定成功。', duration: 6 }] }),
+    /系统光幕/,
+  );
+  await runTool(ctx, 'create_asset', { category: 'prop', name: '系统光幕-绑定成功' });
+  await runTool(ctx, 'set_storyboard', { shots: [{ idx: 1, visual: '江边', characters: ['林冬'], props: ['系统光幕-绑定成功'], narration: '系统（画外音）：末世签到系统绑定成功。', duration: 6 }] });
+  assert.equal(Shots.list(p.id).length, 1);
+  Projects.remove(p.id);
+});
