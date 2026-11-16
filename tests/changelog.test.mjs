@@ -1519,3 +1519,24 @@ test('set_storyboard：开口说话的人必须有角色资产；画面里有屏
   assert.equal(Shots.list(p.id).length, 1);
   Projects.remove(p.id);
 });
+
+test('号池槽位式工作流：__MINIMAX_H3_REF_N__ 按类型换成 <Picture k> / <Audio k>', async () => {
+  const { slotPromptLabels } = await import('../lib/core/workflow-runner.js');
+  const refs = [{ type: 'image', filename: 'a' }, { type: 'image', filename: 'b' }, { type: 'audio', filename: 'c' }, { type: 'audio', filename: 'd' }];
+  const spec = { slots: { image: [{}, {}], audio: [{}] } };
+  const out = slotPromptLabels('__MINIMAX_H3_REF_1__ __MINIMAX_H3_REF_2__ __MINIMAX_H3_REF_3__ __MINIMAX_H3_REF_4__', refs, refs, spec);
+  assert.equal(out, '<Picture 1> <Picture 2> <Audio 1> ');
+});
+
+test('set_storyboard：旁白 / 系统音 / 只闻其声的人自动绑上同名 voice 资产', async () => {
+  const p = mkProject('声音自动绑定项目');
+  const ctx = createToolRuntime({ projectId: p.id, chapter: '第1章' });
+  await runTool(ctx, 'create_asset', { category: 'character', name: '林冬' });
+  await runTool(ctx, 'create_asset', { category: 'voice', name: '旁白音色', description: '男声' });
+  await runTool(ctx, 'create_asset', { category: 'voice', name: '赵雨菲', description: '女声' });
+  await runTool(ctx, 'set_storyboard', { shots: [{ idx: 1, visual: '路口', characters: ['林冬'], narration: '旁白：江城七月。\n赵雨菲（短信画外音）：林冬，我上岸了。', duration: 8 }] });
+  const s = Shots.list(p.id)[0];
+  const names = core.Assets.list(p.id).filter((a) => s.audio_ids.includes(a.id)).map((a) => a.name).sort();
+  assert.deepEqual(names, ['旁白音色', '赵雨菲']);
+  Projects.remove(p.id);
+});
