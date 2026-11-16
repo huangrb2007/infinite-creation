@@ -805,24 +805,7 @@ test('parseFrontmatter + routeSkill', () => {
   const meta = parseFrontmatter('---\nname: x\ndescription: 描述\n---\nbody');
   assert.equal(meta.name, 'x');
   assert.equal(meta.description, '描述');
-  assert.equal(routeSkill('一部小说', ''), 'novel-to-video');
-  assert.equal(routeSkill('', '3D动画'), '3d-animation-short-generator');
-  // 短剧/漫剧路由
-  assert.equal(routeSkill('短剧编剧', ''), '0715-scriptwriter');
-  assert.equal(routeSkill('小说改编成剧本', ''), 'novel-to-skitscreenplay');
-  assert.equal(routeSkill('漫剧前期策划', ''), 'ai-manga-planner');
-  assert.equal(routeSkill('年代一致性优化', ''), 'era-consistency-optimizer');
-  // 漫剧老李套装（新套装优先）
-  assert.equal(routeSkill('漫剧老李全流程', ''), 'short-drama-director');
-  assert.equal(routeSkill('台词诊断', ''), 'sd-script-engine');
-  assert.equal(routeSkill('故事板分镜图', ''), 'sd-storyboard-engine');
-  assert.equal(routeSkill('拆资产三清单', ''), 'sd-asset-engine');
-  assert.equal(routeSkill('玄幻打斗法术对轰', ''), 'sd-xuanhuan-engine');
-  assert.equal(routeSkill('真人打斗MMA', ''), 'sd-real-engine');
-  assert.equal(routeSkill('投喂提示词包', ''), 'sd-feed-engine');
-  assert.equal(routeSkill('质检连续性检查', ''), 'sd-qc-engine');
-  assert.equal(routeSkill('对标爆款采风', ''), 'sd-recon-engine');
-  assert.equal(routeSkill('微短剧分集剧本', ''), 'short-drama-scriptwriting');
+  assert.equal(routeSkill('一部小说', ''), 'director-assistant');
 });
 
 test('collectSkillReferences：递归读取 references 子目录，忽略非 md/txt', () => {

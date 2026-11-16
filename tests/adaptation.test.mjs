@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { voiceStats, narrationChars, narrationSentences, dialogueChars, sceneCount, promptHasLine, ADAPTATION_RULES } from '../lib/agent/adaptation-rules.js';
+import { voiceStats, narrationChars, narrationSentences, dialogueChars, sceneCount, promptHasLine } from '../lib/agent/adaptation-rules.js';
 
 test('剧本声音行解析：对白 / 旁白 / 内心OS / 系统音分开计数，场头和说明行不算', () => {
   const script = [
@@ -33,8 +33,14 @@ test('视频提示词是否带上了某句台词（忽略标点）', () => {
   assert.ok(!promptHasLine(p, '日子没法过了。'));
 });
 
-test('改编规范包含旁白、转场、拆镜三块硬要求', () => {
-  for (const k of ['内心OS', '建立镜头', '禁止硬切', 'narration 字段必须用起来', '固定声线']) assert.ok(ADAPTATION_RULES.includes(k), k);
+test('技能模式：画风选视觉档位；适配说明只讲接口（花括号参考、Ref2VA、不提问）', async () => {
+  const { visualTierOf, buildSkillAdapter } = await import('../lib/agent/adaptation-rules.js');
+  assert.equal(visualTierOf('YHKT科幻国漫 semi-realistic 3D Chinese animation'), '默认 3DCG 档');
+  assert.equal(visualTierOf('写实真人电影'), '真人电影档');
+  assert.equal(visualTierOf('二次元三渲二'), '游戏内三渲二实机建模档');
+  const t = buildSkillAdapter({ style: 'YHKT科幻国漫', styleDetailText: '', webSearch: false });
+  for (const k of ['{{林冬}}', '{{林冬的声音}}', 'Ref2VA', '不要停下来提问', 'update_shot', '正右侧全身']) assert.ok(t.includes(k), k);
+  assert.ok(!/30%|建立镜头|禁止硬切/.test(t));
 });
 
 test('{{资产名}} 占位符按实际参考顺序换成编号；没绑定的名字退回纯文字', async () => {
@@ -71,4 +77,17 @@ test('画风库：名字展开成风格关键词，自定义风格不展开', as
   assert.ok(styleDetail('YHKT科幻国漫').includes('3D'));
   assert.strictEqual(styleDetail('我自己写的风格'), '');
   for (const s of STYLE_LIBRARY) assert.ok(fs.existsSync(new URL('../studio/public/styles/' + s.id + '.jpg', import.meta.url)), s.id + ' 缺预览图');
+});
+
+test('流式进度：模型长时间写一个工具参数时每 30 秒汇报一次已生成字数', async () => {
+  const { createStreamMeter } = await import('../lib/agent/openclaude-agent.js');
+  let t = 0; const got = [];
+  const m = createStreamMeter((r) => got.push(r.detail), { now: () => t });
+  assert.equal(m({ type: 'assistant' }), false);
+  m({ type: 'stream_event', event: { type: 'message_start' } });
+  m({ type: 'stream_event', event: { type: 'content_block_start', content_block: { type: 'tool_use', name: 'mcp__ic__set_chapter_script' } } });
+  for (let i = 0; i < 10; i++) { t += 10000; m({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: 'x'.repeat(100) } } }); }
+  assert.equal(got.length, 3);
+  assert.match(got[0], /set_chapter_script/);
+  assert.match(got[2], /1000 字符|900 字符/);
 });

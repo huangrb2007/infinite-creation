@@ -317,7 +317,7 @@ export default function SkillPipelinePanel({ cfg, setCfg, setSavedCfg, onlyNode 
   }, [pickerAll, query, showAll]);
   const hiddenCount = pickerAll.length - pickerOptions.length;
 
-  const useSkills = cfg?.skillPipeline?.useSkills === true;
+  const useSkills = cfg?.skillPipeline?.useSkills !== false;
   return (
     <div className="flex flex-col gap-4">
       {!onlyNode ? (
@@ -325,8 +325,8 @@ export default function SkillPipelinePanel({ cfg, setCfg, setSavedCfg, onlyNode 
           <Switch
             checked={useSkills}
             onChange={(v) => setCfg((c) => ({ ...c, skillPipeline: { ...(c.skillPipeline || {}), useSkills: v } }))}
-            label="使用技能文档（高级）"
-            hint="默认关闭 = 精简模式：不加载任何技能，用内置规范写剧本和分镜，视频提示词由应用自动生成（台词、旁白、人物参考一句不漏，动作从简）。更快、更稳。打开后才按下面的编排加载技能，由 LLM 逐镜写提示词。"
+            label="使用技能文档"
+            hint="默认打开：按下面的编排加载技能（导演助理 + H3 提示词规范），由 LLM 设计分镜并逐镜写提示词。关掉 = 精简模式：不加载技能，视频提示词由应用按固定模板拼。"
           />
         </div>
       ) : null}
