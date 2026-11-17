@@ -102,3 +102,18 @@ test('AIFISHER 路线人物图：三视图版式改写成「左栏全身 + 右�
   assert.match(out, /梦幻面部特写/);
   assert.match(studioCharacterLayout('standard', 'studio3d'), /半身胸像/);
 });
+
+test('非写实画风：去写实词、画风锚点、视频画风锁', async () => {
+  const ar = await import('../lib/agent/adaptation-rules.js');
+  const sh = await import('../lib/shared/index.js');
+  const p = ar.stripRealismTerms('青年男性，次表面散射，微距可见毛孔，photorealistic skin pores，短发', '3D动画电影');
+  assert.ok(!/毛孔|次表面|photorealistic|微距/.test(p), p);
+  assert.ok(p.includes('青年男性') && p.includes('短发'));
+  assert.equal(ar.stripRealismTerms('真人写实，可见毛孔', '真人写实'), '真人写实，可见毛孔');
+  assert.match(sh.styleAnchor('3D动画电影'), /^画风：3D动画电影，三维动画风格/);
+  assert.match(sh.styleNegative('3D动画电影'), /photorealistic/);
+  assert.equal(sh.styleNegative('真人写实'), '');
+  assert.match(ar.videoStyleLock('3D动画电影'), /Visual style lock: fully stylized 3D CG/);
+  assert.equal(ar.videoStyleLock('真人写实'), '');
+  assert.match(ar.stylizedRule('日系动漫风'), /二维动画/);
+});
