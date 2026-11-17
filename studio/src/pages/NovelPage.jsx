@@ -11,6 +11,7 @@ import { Modal } from '../components/overlays.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import { useJobs } from '../components/simpleStudio.jsx';
 import { useToast } from '../components/toast.jsx';
+import IpScoutModal from '../components/IpScoutModal.jsx';
 
 const STEP_LABEL = { outline: '总纲', volumes: '分卷', chapters: '章纲', write: '正文', start: '整本生成', extend: '扩写', restart: '全部重新生成', all: '全部大纲' };
 
@@ -131,6 +132,7 @@ export default function NovelPage({ onOpenAgentProject }) {
   const [novels, setNovels] = useState([]);
   const [selected, setSelected] = useState(null); // { id, project, structure, characters, memory, chapters, activeJob }
   const [showNew, setShowNew] = useState(false);
+  const [showScout, setShowScout] = useState(false);
   const [panel, setPanel] = useState('chapters');
   const [saving, setSaving] = useState(false);
   // 标题/中心思想编辑（Hook 必须在任何提前 return 之前）
@@ -296,7 +298,7 @@ export default function NovelPage({ onOpenAgentProject }) {
           title="无限・卷轴"
           subtitle="写小说：逐章正文 · 大纲 · 角色 · 上下文记忆"
           icon={<Feather size={22} className="text-[var(--accent)]" />}
-          actions={<Button onClick={() => setShowNew(true)}><Plus size={14} />新建小说</Button>}
+          actions={<div className="flex gap-2"><Button variant="secondary" onClick={() => setShowScout(true)}><Search size={14} />选题 · 热门 IP</Button><Button onClick={() => setShowNew(true)}><Plus size={14} />新建小说</Button></div>}
         />
         {novels.length === 0 ? (
           <div className="panel p-6">
@@ -340,6 +342,7 @@ export default function NovelPage({ onOpenAgentProject }) {
           </div>
         )}
         <NewNovelModal open={showNew} onClose={() => setShowNew(false)} onCreate={(p) => loadSelected(p.id)} />
+        <IpScoutModal open={showScout} onClose={() => setShowScout(false)} />
       </>
     );
   }

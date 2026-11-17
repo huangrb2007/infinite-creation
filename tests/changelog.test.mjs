@@ -1565,3 +1565,21 @@ test('画幅兜底：号池工作流没映射画幅时，按字段名改 aspect_
   assert.deepEqual([wf['265'].inputs.width, wf['265'].inputs.height], [480, 864]);
   assert.deepEqual(sizeForAspect('16:9', '480P'), { width: 864, height: 480 });
 });
+
+test('选题 · 热门 IP：整理 + 打分两步，按总分排序，统一加版权提示', async () => {
+  const { scoutIp } = await import('../lib/agent/ip-scout.js');
+  const calls = [];
+  const chat = async (llm, messages) => {
+    calls.push(messages[1].content);
+    if (calls.length === 1) return { content: JSON.stringify({ listName: '巅峰榜', books: [{ rank: 1, title: '甲', author: 'A', tags: [] }, { rank: 2, title: '乙', author: 'B', tags: [] }, { rank: 3, title: '无作者' }] }) };
+    const sc = (n) => Object.fromEntries(['hook', 'conflict', 'payoff', 'visual', 'cost', 'episodes'].map((k) => [k, { score: n, reason: 'r' }]));
+    return { content: JSON.stringify({ books: [{ key: 'b1', scores: sc(2), logline: 'x' }, { key: 'b2', scores: sc(5), logline: 'y', risks: ['暴力'] }] }) };
+  };
+  const r = await scoutIp('页面内容', { cfg: { llm: { baseUrl: 'x', model: 'm' } }, chat, skill: { body: '规则' } });
+  assert.equal(r.listName, '巅峰榜');
+  assert.deepEqual(r.books.map((b) => b.title), ['乙', '甲']);
+  assert.equal(r.books[0].total, 30);
+  assert.deepEqual(r.books[0].risks, ['暴力', '改编前须取得版权方授权']);
+  assert.match(calls[0], /任务一/);
+  assert.match(calls[1], /任务二/);
+});
