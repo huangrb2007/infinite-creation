@@ -4,7 +4,8 @@ import { api } from '../lib/api.js';
 import { STYLE_CUSTOM, resolveStyle, splitStyle, VIDEO_RESOLUTION_CUSTOM } from '../lib/shared.js';
 import StylePicker from './StylePicker.jsx';
 import { RESOLUTION_SELECT_ITEMS, RATIO_SELECT_ITEMS } from './visuals.jsx';
-import { Button, Field, Input, Select, Switch } from './ui.jsx';
+import { Button, Field, Input, Segmented, Select, Switch } from './ui.jsx';
+import { styleFamily } from '@shared';
 import { FormSection, Modal } from './overlays.jsx';
 import { useToast } from './toast.jsx';
 
@@ -20,6 +21,8 @@ export default function ProjectSettingsDialog({ open, onOpenChange, project, onS
   const [enableBgm, setEnableBgm] = useState(true);
   const [enableSub, setEnableSub] = useState(true);
   const [autoScript, setAutoScript] = useState(true);
+  const [charStyle, setCharStyle] = useState('standard');
+  const [assetEngine, setAssetEngine] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -35,6 +38,8 @@ export default function ProjectSettingsDialog({ open, onOpenChange, project, onS
     setEnableBgm(project.enable_bgm !== false);
     setEnableSub(project.enable_subtitles !== false);
     setAutoScript(project.auto_script !== false);
+    setCharStyle(project.character_style === 'refined' ? 'refined' : 'standard');
+    setAssetEngine(project.asset_engine === 'gpt3d' ? 'gpt3d' : '');
   }, [open, project]);
 
   async function save() {
@@ -50,6 +55,8 @@ export default function ProjectSettingsDialog({ open, onOpenChange, project, onS
         enable_bgm: enableBgm,
         enable_subtitles: enableSub,
         auto_script: autoScript,
+        character_style: charStyle,
+        asset_engine: assetEngine,
       });
       toast.success('项目设置已保存');
       onOpenChange(false);
@@ -87,6 +94,16 @@ export default function ProjectSettingsDialog({ open, onOpenChange, project, onS
           <Field label="画面风格">
             <StylePicker value={resolveStyle(styleSel, customStyle)} onChange={(v) => { const sp = splitStyle(v); setStyleSel(v ? (sp.sel || STYLE_CUSTOM) : ''); setCustomStyle(sp.sel === STYLE_CUSTOM || !sp.sel ? v : ''); }} />
           </Field>
+          {styleFamily(resolveStyle(styleSel, customStyle)) === '3d' ? (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="人物风格（3D 漫剧）" hint={charStyle === 'refined' ? '梦幻面部特写，厚涂琉璃质感' : '海报感半身像，戏剧光'}>
+                <Segmented value={charStyle} onChange={setCharStyle} options={[{ value: 'standard', label: '普通风格' }, { value: 'refined', label: '精致风格' }]} />
+              </Field>
+              <Field label="3D 资产路线" hint="只影响人物和场景的出图提示词，视频不变">
+                <Select value={assetEngine} onChange={setAssetEngine} items={[{ value: '', label: '仙宫 3D 引擎（studio-assets-3d）' }, { value: 'gpt3d', label: 'GPT 3D 三视图（gpt-3d-drama-assets）' }]} />
+              </Field>
+            </div>
+          ) : null}
         </FormSection>
 
         <div className="hairline" />

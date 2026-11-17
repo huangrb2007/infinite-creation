@@ -1583,3 +1583,31 @@ test('选题 · 热门 IP：整理 + 打分两步，按总分排序，统一加�
   assert.match(calls[0], /任务一/);
   assert.match(calls[1], /任务二/);
 });
+
+test('资产画风路由：写实 → studio 人物/场景 + shared；3D → 仙宫引擎或 GPT 3D；没装时回退', async () => {
+  const { effectiveNodeSkills } = await import('../lib/agent/agent-loop.js');
+  const { styleFamily, assetRoute } = shared;
+  const all = ['novel-to-script', 'minimax-drama-prompt', 'shared-assets', 'studio-character-assets', 'studio-scene-assets', 'gpt-3d-drama-assets', 'studio-assets-3d', 'asset-extraction', 'image-prompt-writing'];
+  assert.equal(styleFamily('YHKT科幻国漫'), '3d');
+  assert.equal(styleFamily('真人写实'), 'realistic');
+  assert.equal(styleFamily('日系动漫风'), '2d');
+  assert.equal(assetRoute({ style: '3D动画电影', asset_engine: 'gpt3d' }), 'gpt3d');
+  let r = effectiveNodeSkills(null, all, { style: '真人写实' });
+  assert.deepEqual(r.nodes.character.skills, ['shared-assets', 'studio-character-assets']);
+  assert.deepEqual(r.nodes.scene.skills, ['shared-assets', 'studio-scene-assets']);
+  r = effectiveNodeSkills(null, all, { style: 'YHKT科幻国漫' });
+  assert.deepEqual(r.nodes.character.skills, ['studio-assets-3d']);
+  r = effectiveNodeSkills(null, all, { style: 'YHKT科幻国漫', asset_engine: 'gpt3d' });
+  assert.deepEqual(r.nodes.scene.skills, ['gpt-3d-drama-assets']);
+  r = effectiveNodeSkills(null, ['asset-extraction', 'image-prompt-writing'], { style: '真人写实' });
+  assert.deepEqual(r.nodes.character.skills, ['asset-extraction', 'image-prompt-writing']);
+});
+
+test('项目：3D 人物风格与资产路线可保存', async () => {
+  const p = mkProject('人物风格项目');
+  Projects.update(p.id, { character_style: 'refined', asset_engine: 'gpt3d' });
+  const q = Projects.get(p.id);
+  assert.equal(q.character_style, 'refined');
+  assert.equal(q.asset_engine, 'gpt3d');
+  Projects.remove(p.id);
+});
