@@ -91,3 +91,14 @@ test('流式进度：模型长时间写一个工具参数时每 30 秒汇报一�
   assert.match(got[0], /set_chapter_script/);
   assert.match(got[2], /1000 字符|900 字符/);
 });
+
+test('AIFISHER 路线人物图：三视图版式改写成「左栏全身 + 右栏特写 / 胸像」两栏', async () => {
+  const { rewriteSheetToStudio, studioCharacterLayout } = await import('../lib/agent/adaptation-rules.js');
+  const p = '竖版9:16人物设定图，纯白背景。画面左侧三分之一是一张极近面部特写：26岁女性。画面右侧三分之二从左到右并排同一人物的正面全身、侧面全身、背面全身三视图：身高170。固定着装：白衬衫。';
+  const out = rewriteSheetToStudio(p, studioCharacterLayout('refined', 'studio3d'));
+  assert.ok(!/三视图|三分之一|三分之二|设定图/.test(out.split('\n')[0]), out);
+  assert.match(out, /右栏是极近面部特写：26岁女性/);
+  assert.match(out, /左栏是同一人物的站立全身像：身高170/);
+  assert.match(out, /梦幻面部特写/);
+  assert.match(studioCharacterLayout('standard', 'studio3d'), /半身胸像/);
+});
