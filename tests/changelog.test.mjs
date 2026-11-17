@@ -1555,3 +1555,13 @@ test('set_storyboard：物件声源（系统、短信、电话…）的台词必
   assert.equal(Shots.list(p.id).length, 1);
   Projects.remove(p.id);
 });
+
+test('画幅兜底：号池工作流没映射画幅时，按字段名改 aspect_ratio，或按比例算宽高', async () => {
+  const { buildWorkflow, sizeForAspect } = await import('../lib/core/workflow-runner.js');
+  const specA = { backend: 'pool', template: { 115: { class_type: 'PoolField', inputs: { aspect_ratio: '16:9 (Widescreen)' } }, 138: { class_type: 'PoolField', inputs: { value: '' } } }, roles: { positive_prompt: { node: '138', field: 'value' } }, slots: {} };
+  assert.equal(buildWorkflow(specA, { positive_prompt: 'x', aspect_ratio: '9:16' })['115'].inputs.aspect_ratio, '9:16 (Portrait Widescreen)');
+  const specB = { backend: 'pool', template: { 265: { class_type: 'PoolField', inputs: { prompt: '', width: 848, height: 480 } } }, roles: { positive_prompt: { node: '265', field: 'prompt' }, width: { node: '265', field: 'width' }, height: { node: '265', field: 'height' } }, slots: {} };
+  const wf = buildWorkflow(specB, { positive_prompt: 'x', aspect_ratio: '9:16', resolution: '480P' });
+  assert.deepEqual([wf['265'].inputs.width, wf['265'].inputs.height], [480, 864]);
+  assert.deepEqual(sizeForAspect('16:9', '480P'), { width: 864, height: 480 });
+});
