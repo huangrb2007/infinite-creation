@@ -143,21 +143,67 @@ test('豆包插件：经假画布助手提交、轮询、取回成片', async ()
   }
 });
 
-test('豆包插件：审核不通过直接报错，不当成功', async () => {
+test('豆包插件：审核不通过 → 同一账号原样重新提交，成功后取回成片', async () => {
+  process.env.IC_PLUGIN_POLL_MS = '50';
+  const video = path.join(TMP, 'result-mod.mp4');
+  fs.writeFileSync(video, Buffer.from('mod-ok'));
+  const bodies = [];
   const srv = http.createServer((req, res) => {
     const send = (j) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(j)); };
     if (req.url === '/api/health') return send({ status: 'ok', accounts: [] });
-    if (req.url === '/api/generate') { req.resume(); req.on('end', () => send({ task_id: 't2' })); return; }
-    if (req.url === '/api/tasks/t2') return send({ status: 'error', detail: '账号「主账号」失败：豆包返回：审核不通过,请修改后重试' });
+    if (req.url === '/api/generate') {
+      let b = '';
+      req.on('data', (c) => { b += c; });
+      req.on('end', () => { bodies.push(JSON.parse(b)); send({ task_id: 'm' + bodies.length }); });
+      return;
+    }
+    const m = /^\/api\/tasks\/m(\d+)$/.exec(req.url || '');
+    if (m) {
+      const n = Number(m[1]);
+      return send(n < 3 ? { status: 'error', account: '号7', detail: '账号「号7」失败：豆包返回：审核不通过,请修改后重试（业务码：2）' } : { status: 'done', result_path: video });
+    }
     send({});
   });
   await new Promise((r) => srv.listen(0, '127.0.0.1', r));
   try {
     const cfg = cfgWith({ plugins: { 'doubao-canvas': { params: { manager_url: 'http://127.0.0.1:' + srv.address().port } } } });
     const spec = getCatalogSpec(cfg, 'plugin:doubao-canvas');
-    await assert.rejects(core.runWorkflow(cfg, spec, { positive_prompt: 'x', seconds: 5, references: [] }), /审核不通过/);
+    const statuses = [];
+    const r = await core.runWorkflow(cfg, spec, { positive_prompt: '镜头1：她回头。', seconds: 15, references: [] }, { onStatus: (s) => statuses.push(s.message) });
+    assert.equal(bodies.length, 3);
+    assert.equal(bodies[0].account, undefined);
+    assert.equal(bodies[1].account, '号7');
+    assert.equal(bodies[2].account, '号7');
+    assert.ok(bodies.every((b) => b.prompt === bodies[0].prompt), '提示词原样不改');
+    assert.notEqual(bodies[1].generation_round, bodies[0].generation_round);
+    assert.ok(statuses.some((x) => /第 1\/10 次原样重新提交/.test(x)), statuses.join('|'));
+    const out = core.pickOutput(r.outputs, 'videos');
+    assert.equal(fs.readFileSync(out.localPath, 'utf8'), 'mod-ok');
   } finally {
     srv.close();
+    delete process.env.IC_PLUGIN_POLL_MS;
+  }
+});
+
+test('豆包插件：审核不通过重试次数用完 → 报错并说明不是文案问题', async () => {
+  process.env.IC_PLUGIN_POLL_MS = '50';
+  let n = 0;
+  const srv = http.createServer((req, res) => {
+    const send = (j) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(j)); };
+    if (req.url === '/api/health') return send({ status: 'ok', accounts: [] });
+    if (req.url === '/api/generate') { req.resume(); req.on('end', () => { n += 1; send({ task_id: 't' + n }); }); return; }
+    if (/^\/api\/tasks\//.test(req.url)) return send({ status: 'error', detail: '账号「主账号」失败：豆包返回：审核不通过,请修改后重试' });
+    send({});
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  try {
+    const cfg = cfgWith({ plugins: { 'doubao-canvas': { params: { manager_url: 'http://127.0.0.1:' + srv.address().port, moderation_retries: 2 } } } });
+    const spec = getCatalogSpec(cfg, 'plugin:doubao-canvas');
+    await assert.rejects(core.runWorkflow(cfg, spec, { positive_prompt: 'x', seconds: 5, references: [] }), /审核未通过（已在同一账号原样重新提交 2 次）.*不要改写提示词/);
+    assert.equal(n, 3);
+  } finally {
+    srv.close();
+    delete process.env.IC_PLUGIN_POLL_MS;
   }
 });
 

@@ -232,6 +232,8 @@ function nearestRatio(r) {
   }, '16:9');
 }
 
+const MODERATION_RE = /审核不通过|审核未通过|业务码[:：]\s*2(?!\d)|compliance|合规/i;
+
 export async function generate(ctx) {
   const params = ctx.params || {};
   const onProgress = ctx.onProgress || (() => {});
@@ -276,12 +278,15 @@ export async function generate(ctx) {
   ctx.onSubmitted?.(taskId);
   onProgress('排队中');
 
-  const poll = 5000;
+  const poll = Number(process.env.IC_PLUGIN_POLL_MS) || 5000;
   const deadline = Date.now() + timeoutSec * 1000 + 120_000;
   let quotaSince = 0;
   let miss = 0;
   let resubmitted = false;
   let last = '';
+  const maxMod = Math.max(0, Math.min(50, Math.round(Number(params.moderation_retries ?? 10))));
+  let modTries = 0;
+  let pinnedAccount = '';
   while (Date.now() < deadline) {
     if (ctx.isAborted?.()) throw new Error('已取消（画布助手里的这条任务请手动停止）');
     await sleep(poll);
@@ -317,8 +322,31 @@ export async function generate(ctx) {
       fs.copyFileSync(src, dst);
       return { files: [dst], taskId };
     }
+    if (status === 'compliance_rejection' || (status === 'error' && MODERATION_RE.test(detail))) {
+      // 审核不通过：多数是平台对参考图 / 人物的随机审核，不是文案问题。
+      // 同一账号、同一内容原样重新提交，次数在插件设置里（默认 10 次）。
+      if (modTries < maxMod) {
+        modTries += 1;
+        if (acc) pinnedAccount = acc;
+        onProgress('审核未通过，第 ' + modTries + '/' + maxMod + ' 次原样重新提交' + (pinnedAccount ? '（同一账号 ' + pinnedAccount + '）' : ''));
+        await sleep(Math.min(15_000, (poll / 5000) * 3000 * modTries));
+        const p2 = { ...payload, generation_round: (payload.generation_round || 0) + modTries * 1000 + (Date.now() % 997), force_new_window: true };
+        if (pinnedAccount) p2.account = pinnedAccount;
+        let r2 = await call(params, 'POST', '/api/generate', p2);
+        if (!r2?.task_id && r2?.project_stopped) {
+          await call(params, 'POST', '/api/tasks/resume', {});
+          r2 = await call(params, 'POST', '/api/generate', p2);
+        }
+        if (!r2?.task_id) throw new Error('审核未通过后重新提交，画布助手没有接单：' + String(r2?.error || r2?.message || JSON.stringify(r2)).slice(0, 200));
+        taskId = r2.task_id;
+        ctx.onSubmitted?.(taskId);
+        last = '';
+        continue;
+      }
+      throw new Error('豆包审核未通过（已在同一账号原样重新提交 ' + maxMod + ' 次）：' + (detail || '平台内容审核').slice(0, 160)
+        + '。这是平台对参考图 / 人物的审核，不是提示词文案问题：不要改写提示词，记下这段，继续后面的段落。');
+    }
     if (status === 'error') throw new Error('豆包生成失败：' + (detail || '画布助手没有给出原因').slice(0, 300));
-    if (status === 'compliance_rejection') throw new Error('豆包内容审核未通过：' + (detail || '请修改提示词或参考图后重试').slice(0, 200));
     if (status === 'cancelled') throw new Error('任务在画布助手里被取消' + (detail ? '：' + detail.slice(0, 120) : ''));
     if (status === 'quota_exhausted') {
       // 不是终态：画布助手会换同组另一个账号续跑
