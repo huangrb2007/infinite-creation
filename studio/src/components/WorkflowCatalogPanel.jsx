@@ -3,11 +3,12 @@ import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Cloud, Layers, 
 import { api } from '../lib/api.js';
 import { Badge, Button, Field, Input, Select, Spinner, Switch } from './ui.jsx';
 import { useToast } from './toast.jsx';
+import PluginPanel from './PluginPanel.jsx';
 
 // 设置 → 工作流：云端 ComfyUI 与号池的工作流按类别列出，每个类别选一个给生产流水线用。
 // 选择写在 cfg.catalog.selected（随「保存配置」一起写入）；刷新目录走后台任务，这里轮询进度。
 
-const SOURCE_LABEL = { cloud: '云端', pool: '号池', api: 'LLM 接口' };
+const SOURCE_LABEL = { cloud: '云端', pool: '号池', api: 'LLM 接口', plugin: '插件' };
 const SERIES_HINT = 'U=H3 视频 · B=Qwen 编辑 · N=声音 · J=数字人 · P=动作迁移';
 
 function ago(ts) {
@@ -165,6 +166,8 @@ export default function WorkflowCatalogPanel({ cfg, setCfg, Section }) {
         {pool.enabled && data?.pool?.error ? <p className="m-0 text-[11.5px] text-[var(--danger)]">号池读取失败：{data.pool.error}</p> : null}
         {err ? <p className="m-0 text-[11.5px] text-[var(--danger)]">{err}</p> : null}
       </Section>
+
+      <PluginPanel catalog={catalog} setCatalog={setCatalog} Section={Section} onChanged={load} />
 
       <Section icon={Layers} title="按类别选用" description="每个类别选一个工作流；不选则使用内置默认（项目自带的 H3 / Qwen-Image / Qwen3-TTS / Music3 工作流）。">
         {!data ? (

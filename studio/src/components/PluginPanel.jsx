@@ -1,0 +1,142 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronDown, ChevronRight, Puzzle, Upload } from 'lucide-react';
+import { api, uploadBinary } from '../lib/api.js';
+import { Badge, Button, Field, Input, Select, Spinner, Switch } from './ui.jsx';
+import { useToast } from './toast.jsx';
+
+// 设置 → 工作流 → 生成插件（参考字字动画的插件模式）。
+// 插件是一个出片来源：启用后出现在「按类别选用」里（如视频类出现「豆包画布助手」），选中才会用到，不影响其它功能。
+// 设置写在 cfg.catalog.plugins[id] = { enabled, params }，随「保存配置」写入。
+
+export default function PluginPanel({ catalog, setCatalog, Section, onChanged }) {
+  const toast = useToast();
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  const [open, setOpen] = useState('');
+  const [testing, setTesting] = useState('');
+  const [result, setResult] = useState({});
+  const fileRef = useRef(null);
+  const conf = catalog.plugins || {};
+
+  const load = useCallback(async () => {
+    try { setData(await api.get('/api/plugins')); setErr(''); } catch (e) { setErr(e.message); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const setPlugin = (id, patch) => setCatalog({ plugins: { ...conf, [id]: { ...(conf[id] || {}), ...patch } } });
+  const valuesOf = (p) => ({ ...(p.values || {}), ...(conf[p.id]?.params || {}) });
+  const setParam = (p, key, v) => setPlugin(p.id, { params: { ...(conf[p.id]?.params || {}), [key]: v } });
+  const enabledOf = (p) => (conf[p.id]?.enabled !== undefined ? conf[p.id].enabled !== false : p.enabled);
+
+  async function test(p) {
+    setTesting(p.id);
+    try {
+      const r = await api.post('/api/plugins/test', { id: p.id, params: valuesOf(p) });
+      setResult((m) => ({ ...m, [p.id]: r }));
+    } catch (e) {
+      setResult((m) => ({ ...m, [p.id]: { ok: false, message: e.message } }));
+    } finally {
+      setTesting('');
+    }
+  }
+
+  async function importZip(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const r = await uploadBinary('/api/plugins/upload', file, 'application/zip');
+      toast.success('已导入插件 ' + r.id);
+      await load();
+      onChanged?.();
+    } catch (er) {
+      toast.error('导入失败：' + er.message);
+    }
+  }
+
+  return (
+    <Section icon={Puzzle} title="生成插件" description="把外部出片工具接进来（如本机的豆包画布助手）。启用并保存配置后，插件会出现在下面对应类别里，选中才会用来出片。">
+      {!data ? (
+        err ? <p className="m-0 text-[11.5px] text-[var(--danger)]">{err}</p> : <Spinner size={16} />
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          {data.plugins.length ? data.plugins.map((p) => {
+            const on = enabledOf(p);
+            const vals = valuesOf(p);
+            const r = result[p.id];
+            const expanded = open === p.id;
+            return (
+              <div key={p.id} className="flex flex-col gap-3 rounded-xl border border-[var(--line)] bg-black/20 p-3.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" className="flex min-w-0 flex-1 items-center gap-2 border-0 bg-transparent p-0 text-left" onClick={() => setOpen(expanded ? '' : p.id)}>
+                    {expanded ? <ChevronDown size={14} className="shrink-0 text-[var(--fg-3)]" /> : <ChevronRight size={14} className="shrink-0 text-[var(--fg-3)]" />}
+                    <span className="flex min-w-0 flex-col">
+                      <span className="flex flex-wrap items-center gap-1.5 text-[13px] font-medium text-[var(--fg)]">
+                        {p.name}
+                        {p.version ? <span className="text-[11px] font-normal text-[var(--fg-4)]">{p.version}</span> : null}
+                        <Badge tone="info">{p.type === 'video' ? '视频' : '图片'} · {p.familyName}</Badge>
+                        {p.builtin ? <Badge tone="neutral">内置</Badge> : <Badge tone="accent">已导入</Badge>}
+                        {p.error ? <Badge tone="danger" dot>不可用</Badge> : null}
+                      </span>
+                      <span className="truncate text-[11px] text-[var(--fg-4)]" title={p.description}>{p.description}</span>
+                    </span>
+                  </button>
+                  <Button variant="secondary" size="sm" onClick={() => test(p)} disabled={!!p.error || testing === p.id}>
+                    {testing === p.id ? <Spinner size={12} /> : null} 测试连接
+                  </Button>
+                  <Switch checked={on} onChange={(v) => setPlugin(p.id, { enabled: v })} label="" disabled={!!p.error} />
+                </div>
+                {p.error ? <p className="m-0 text-[11.5px] text-[var(--danger)]">{p.error}</p> : null}
+                {r ? <p className={'m-0 text-[11.5px] ' + (r.ok ? 'text-[var(--success)]' : 'text-[var(--danger)]')}>{r.message}</p> : null}
+                {expanded ? (
+                  <>
+                    {p.help ? <p className="m-0 whitespace-pre-line text-[11.5px] leading-relaxed text-[var(--fg-3)]">{p.help}</p> : null}
+                    {p.promptStyle === 'seedance' ? (
+                      <p className="m-0 text-[11.5px] leading-relaxed text-[var(--fg-3)]">选它出片时：技能模式的分段与提示词自动改用 seedance-drama-prompt（中文时间轴写法），每段 {(p.capabilities?.durations || [5, 10, 15]).join(' / ')} 秒；精简模式的提示词也按 Seedance 写法拼。</p>
+                    ) : null}
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {p.params.map((f) => (
+                        <ParamField key={f.key} f={f} value={vals[f.key]} onChange={(v) => setParam(p, f.key, v)} />
+                      ))}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            );
+          }) : <p className="m-0 text-[11.5px] text-[var(--fg-4)]">还没有插件。</p>}
+          <div className="flex flex-wrap items-center gap-2">
+            <input ref={fileRef} type="file" accept=".zip,application/zip" className="hidden" onChange={importZip} />
+            <Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()}><Upload size={13} /> 导入插件（.zip）</Button>
+            <span className="text-[11px] text-[var(--fg-4)]">插件代码会在本机运行，只导入信得过的插件。改了开关和参数后记得「保存配置」。</span>
+          </div>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function ParamField({ f, value, onChange }) {
+  const label = f.label || f.key;
+  if (f.type === 'select') {
+    return (
+      <Field label={label} hint={f.hint}>
+        <Select value={value ?? ''} onChange={onChange} items={(f.options || []).map((o) => (typeof o === 'object' ? o : { value: o, label: String(o) }))} size="sm" />
+      </Field>
+    );
+  }
+  if (f.type === 'switch' || f.type === 'boolean') {
+    return <Switch checked={!!value} onChange={onChange} label={label} hint={f.hint} />;
+  }
+  if (f.type === 'number') {
+    return (
+      <Field label={label} hint={f.hint}>
+        <Input type="number" min={f.min} max={f.max} value={value ?? ''} onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))} className="h-9" />
+      </Field>
+    );
+  }
+  return (
+    <Field label={label} hint={f.hint}>
+      <Input type={f.type === 'password' ? 'password' : 'text'} value={value ?? ''} onChange={(e) => onChange(e.target.value)} placeholder={f.placeholder || ''} className="h-9" />
+    </Field>
+  );
+}

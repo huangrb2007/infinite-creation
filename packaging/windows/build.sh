@@ -23,7 +23,7 @@ fi
 echo "[2/5] 拷贝程序文件"
 cd "$STAGE/app"
 for f in server.js next.config.mjs jsconfig.json LICENSE README.md config.example.json; do cp "$ROOT/$f" .; done
-cp -r "$ROOT/app" "$ROOT/lib" "$ROOT/public" "$ROOT/skills" "$ROOT/workflows" "$ROOT/harness-skills" .
+cp -r "$ROOT/app" "$ROOT/lib" "$ROOT/public" "$ROOT/skills" "$ROOT/workflows" "$ROOT/harness-skills" "$ROOT/plugins" .
 mkdir -p studio scripts vendor/openclaude .next packaging
 cp -r "$ROOT/studio/dist" studio/
 cp "$ROOT/scripts/serve-web.mjs" scripts/
