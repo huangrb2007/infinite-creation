@@ -52,13 +52,26 @@ mv "$STAGE/app/vendor" "$STAGE/heavy/"
 
 echo "[4/5] 下载便携 Node 与 ffmpeg"
 cd "$WORK/dl"
-[ -f node.zip ] || curl -sSLo node.zip "https://nodejs.org/dist/$NODE_VER/node-$NODE_VER-win-x64.zip"
+# 下载 zip：失败或下回来的不是完整 zip（下载站限流时会返回网页）就重试，依次换备用地址
+fetch_zip() {
+  local out="$1"; shift
+  unzip -tqq "$out" >/dev/null 2>&1 && return 0
+  for url in "$@"; do
+    for i in 1 2 3; do
+      rm -f "$out"
+      if curl -sSL --retry 3 --retry-delay 5 -o "$out" "$url" && unzip -tqq "$out" >/dev/null 2>&1; then return 0; fi
+      echo "下载失败或文件不完整（第 $i 次）：$url"; sleep $((i * 10))
+    done
+  done
+  echo "无法下载 $out"; return 1
+}
+fetch_zip node.zip "https://nodejs.org/dist/$NODE_VER/node-$NODE_VER-win-x64.zip"
 unzip -qo node.zip "node-$NODE_VER-win-x64/node.exe" "node-$NODE_VER-win-x64/LICENSE"
 cp "node-$NODE_VER-win-x64/node.exe" "node-$NODE_VER-win-x64/LICENSE" "$STAGE/node/"
-[ -f ff.zip ] || curl -sSLo ff.zip https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
-unzip -qo ff.zip '*/bin/ffmpeg.exe' '*/bin/ffprobe.exe' '*/LICENSE'
+fetch_zip ff.zip https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip
+unzip -qo ff.zip '*/bin/ffmpeg.exe' '*/bin/ffprobe.exe' '*/LICENSE*'
 cp ffmpeg-*/bin/ffmpeg.exe ffmpeg-*/bin/ffprobe.exe "$STAGE/bin/"
-cp ffmpeg-*/LICENSE "$STAGE/bin/FFMPEG_LICENSE.txt"
+cp "$(ls -d ffmpeg-*/LICENSE* | head -1)" "$STAGE/bin/FFMPEG_LICENSE.txt"
 
 echo "[5/5] 生成安装包"
 cd "$ROOT/packaging/windows"
