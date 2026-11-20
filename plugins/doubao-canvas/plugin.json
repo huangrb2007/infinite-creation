@@ -8,46 +8,191 @@
   "model_family": "seedance-2.0",
   "author": "短剧制作 Studio",
   "description": "用你自己登录的豆包 / Dola / 飞书账号，通过本机运行的「豆包画布助手」生成 Seedance 2.0 视频。先启动豆包画布助手并登录账号。",
-  "help": "1. 启动「豆包画布助手.exe」，登录至少一个账号（授权在画布助手里完成）。\n2. 这里点「测试连接」，显示账号数即可。\n3. 在上面「视频（r2v）」类别里选「豆包画布助手」。选中后，技能模式的分镜提示词自动改按 Seedance 2.0 写法，每段时长 5 / 10 / 15 秒。\n4. 豆包只接收参考图（最多 9 张），不接收音色参考：角色声音由 Seedance 按提示词里的声线描述生成。\n5. 豆包 / 即梦会拦截写实真人脸的参考图（报「审核不通过」），优先用 3D、国漫、动漫等风格化画风。",
+  "help": "1. 启动「豆包画布助手.exe」，登录至少一个账号（授权在画布助手里完成）。\n2. 这里点「测试连接」，显示账号数即可。\n3. 在上面「视频（r2v）」类别里选「豆包画布助手」。选中后，技能模式的分镜提示词自动改按 Seedance 2.0 写法，默认每段固定 15 秒、一段 3–5 个镜头（豆包 5 / 10 / 15 秒都扣一次额度）。\n4. 豆包只接收参考图（最多 9 张），不接收音色参考：角色声音由 Seedance 按提示词里的声线描述生成。\n5. 豆包 / 即梦会拦截写实真人脸的参考图（报「审核不通过」），优先用 3D、国漫、动漫等风格化画风。",
   "capabilities": {
     "maxImages": 9,
     "audio": false,
     "video": false,
     "nativeAudio": true,
-    "durations": [5, 10, 15],
+    "durations": [
+      5,
+      10,
+      15
+    ],
     "maxSeconds": 15,
     "minSeconds": 5,
-    "ratios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
-    "concurrency": 5
+    "ratios": [
+      "16:9",
+      "9:16",
+      "1:1",
+      "4:3",
+      "3:4",
+      "21:9"
+    ],
+    "concurrency": 5,
+    "durationModes": {
+      "fixed15": [
+        15
+      ],
+      "auto": [
+        5,
+        10,
+        15
+      ]
+    },
+    "durationModeParam": "segment_mode"
   },
   "params": [
-    { "key": "manager_url", "label": "画布助手地址", "type": "text", "default": "http://127.0.0.1:17999", "hint": "豆包画布助手在本机的接口地址，一般不用改" },
-    { "key": "manager_exe", "label": "豆包画布助手.exe 路径（可选）", "type": "text", "default": "", "hint": "填了以后，出片时画布助手没开会自动启动它" },
-    { "key": "target_platform", "label": "发布目标", "type": "select", "default": "doubao", "options": [
-      { "value": "doubao", "label": "豆包" },
-      { "value": "dola", "label": "Dola" },
-      { "value": "feishu", "label": "飞书" }
-    ] },
-    { "key": "model", "label": "视频模型", "type": "select", "default": "seedance2.0fast", "options": [
-      { "value": "seedance2.0fast", "label": "Seedance 2.0 Fast" },
-      { "value": "seedance2.0mini", "label": "Seedance 2.0 Mini" },
-      { "value": "Seedance 2.5（豆包）", "label": "Seedance 2.5（豆包）" }
-    ] },
-    { "key": "exec_mode", "label": "执行方式", "type": "select", "default": "api_popout", "hint": "飞书固定用外部弹窗；Dola 只支持对话 / 画布", "options": [
-      { "value": "api_popout", "label": "外部弹窗（可见窗口）" },
-      { "value": "api", "label": "接口直连（不弹窗）" },
-      { "value": "canvas", "label": "画布模式" },
-      { "value": "chat", "label": "对话模式" }
-    ] },
-    { "key": "resolution", "label": "清晰度（仅飞书）", "type": "select", "default": "1080P", "options": [
-      { "value": "720P", "label": "720P" },
-      { "value": "1080P", "label": "1080P" },
-      { "value": "2K", "label": "2K" },
-      { "value": "4K", "label": "4K" }
-    ] },
-    { "key": "account_group", "label": "账号分组", "type": "text", "default": "", "hint": "留空 = 轮换全部已登录账号" },
-    { "key": "concurrency", "label": "同时出片", "type": "number", "default": 5, "min": 1, "max": 100, "hint": "本软件同时交给画布助手的段数" },
-    { "key": "timeout_min", "label": "单段超时（分钟）", "type": "number", "default": 60, "min": 5, "max": 240 },
-    { "key": "bridge_token", "label": "桥接令牌（可选）", "type": "password", "default": "", "hint": "一般留空：自动读取画布助手写在用户目录 .doubao_dola 下的令牌" }
+    {
+      "key": "manager_url",
+      "label": "画布助手地址",
+      "type": "text",
+      "default": "http://127.0.0.1:17999",
+      "hint": "豆包画布助手在本机的接口地址，一般不用改"
+    },
+    {
+      "key": "manager_exe",
+      "label": "豆包画布助手.exe 路径（可选）",
+      "type": "text",
+      "default": "",
+      "hint": "填了以后，出片时画布助手没开会自动启动它"
+    },
+    {
+      "key": "target_platform",
+      "label": "发布目标",
+      "type": "select",
+      "default": "doubao",
+      "options": [
+        {
+          "value": "doubao",
+          "label": "豆包"
+        },
+        {
+          "value": "dola",
+          "label": "Dola"
+        },
+        {
+          "value": "feishu",
+          "label": "飞书"
+        }
+      ]
+    },
+    {
+      "key": "model",
+      "label": "视频模型",
+      "type": "select",
+      "default": "seedance2.0fast",
+      "options": [
+        {
+          "value": "seedance2.0fast",
+          "label": "Seedance 2.0 Fast"
+        },
+        {
+          "value": "seedance2.0mini",
+          "label": "Seedance 2.0 Mini"
+        },
+        {
+          "value": "Seedance 2.5（豆包）",
+          "label": "Seedance 2.5（豆包）"
+        }
+      ]
+    },
+    {
+      "key": "segment_mode",
+      "label": "每段时长",
+      "type": "select",
+      "default": "fixed15",
+      "hint": "豆包生成 5 / 10 / 15 秒都扣一次额度，固定 15 秒多镜头最划算",
+      "options": [
+        {
+          "value": "fixed15",
+          "label": "固定每段 15 秒（多镜头，推荐）"
+        },
+        {
+          "value": "auto",
+          "label": "按分镜取 5 / 10 / 15 秒"
+        }
+      ]
+    },
+    {
+      "key": "exec_mode",
+      "label": "执行方式",
+      "type": "select",
+      "default": "api_popout",
+      "hint": "飞书固定用外部弹窗；Dola 只支持对话 / 画布",
+      "options": [
+        {
+          "value": "api_popout",
+          "label": "外部弹窗（可见窗口）"
+        },
+        {
+          "value": "api",
+          "label": "接口直连（不弹窗）"
+        },
+        {
+          "value": "canvas",
+          "label": "画布模式"
+        },
+        {
+          "value": "chat",
+          "label": "对话模式"
+        }
+      ]
+    },
+    {
+      "key": "resolution",
+      "label": "清晰度（仅飞书）",
+      "type": "select",
+      "default": "1080P",
+      "options": [
+        {
+          "value": "720P",
+          "label": "720P"
+        },
+        {
+          "value": "1080P",
+          "label": "1080P"
+        },
+        {
+          "value": "2K",
+          "label": "2K"
+        },
+        {
+          "value": "4K",
+          "label": "4K"
+        }
+      ]
+    },
+    {
+      "key": "account_group",
+      "label": "账号分组",
+      "type": "text",
+      "default": "",
+      "hint": "留空 = 轮换全部已登录账号"
+    },
+    {
+      "key": "concurrency",
+      "label": "同时出片",
+      "type": "number",
+      "default": 5,
+      "min": 1,
+      "max": 100,
+      "hint": "本软件同时交给画布助手的段数"
+    },
+    {
+      "key": "timeout_min",
+      "label": "单段超时（分钟）",
+      "type": "number",
+      "default": 60,
+      "min": 5,
+      "max": 240
+    },
+    {
+      "key": "bridge_token",
+      "label": "桥接令牌（可选）",
+      "type": "password",
+      "default": "",
+      "hint": "一般留空：自动读取画布助手写在用户目录 .doubao_dola 下的令牌"
+    }
   ]
 }

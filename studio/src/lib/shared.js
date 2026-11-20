@@ -36,7 +36,8 @@ export const VIDEO_RATIO_ITEMS = VIDEO_ASPECT_RATIOS.map((r) => ({ value: r, lab
 
 export const STYLE_PRESETS = STYLE_LIBRARY.map((x) => x.name);
 export const STYLE_CUSTOM = '自定义风格';
-export const STYLE_OPTIONS = [...STYLE_PRESETS, STYLE_CUSTOM];
+// 二维画风已从选择列表里隐藏（老项目里存的二维画风名仍然认）
+export const STYLE_OPTIONS = [...STYLE_LIBRARY.filter((x) => !x.hidden).map((x) => x.name), STYLE_CUSTOM];
 
 export function resolveStyle(sel, custom) {
   return sel === STYLE_CUSTOM ? (custom || '').trim() : sel || '';

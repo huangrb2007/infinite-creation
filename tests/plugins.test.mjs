@@ -38,7 +38,9 @@ test('内置豆包插件：出现在视频类别，模型族 Seedance', () => {
   // 没选插件：不影响原来的 H3 写法
   assert.equal(core.videoPromptStyle({ catalog: { selected: { r2v: 'pool:abc' } } }), '');
   const info = core.videoEngineInfo(cfgWith());
-  assert.deepEqual(info.durations, [5, 10, 15]);
+  assert.deepEqual(info.durations, [15], '默认固定每段 15 秒（豆包 5/10/15 秒都扣一次额度）');
+  const auto = core.videoEngineInfo(cfgWith({ plugins: { 'doubao-canvas': { params: { segment_mode: 'auto' } } } }));
+  assert.deepEqual(auto.durations, [5, 10, 15]);
   assert.equal(info.maxImages, 9);
 });
 
@@ -74,7 +76,7 @@ test('技能模式：选了豆包插件 → 分段与提示词改用 seedance-dr
   const r0 = effectiveNodeSkills(null, all, { style: '3D动画电影' }, null);
   assert.equal(r0.nodes.pipeline.skills[0], 'minimax-drama-prompt');
   const a = buildSkillAdapter({ style: '3D动画电影', aspect: '9:16', mainSkill: 'seedance-drama-prompt', engine });
-  assert.match(a, /duration 只能取 5 \/ 10 \/ 15 秒/);
+  assert.match(a, /duration 一律 15 秒/);
   assert.match(a, /不要写 \{\{林冬的声音\}\}/);
   assert.ok(!/六段式：subject_definitions/.test(a), 'H3 格式条目被替换');
   const lean = composeSeedancePrompt({ duration: 5, lines: '林冬（惊讶）：谁？\n旁白：门外没人。' }, { characters: [{ name: '林冬', voice_desc: '青年男声' }], aspect: '9:16' });
@@ -123,7 +125,7 @@ test('豆包插件：经假画布助手提交、轮询、取回成片', async ()
       positive_prompt: '【分镜】0-5秒｜近景｜固定镜头：__MINIMAX_H3_REF_1__低头看手机。',
       seconds: 7, aspect_ratio: '9:16', references: [{ type: 'image', name: '林冬', label: '林冬（人物形象）', filename: img }],
     }, { onStatus: (s) => statuses.push(s.message) });
-    assert.equal(seen.body.duration, '10s');
+    assert.equal(seen.body.duration, '15s');
     assert.equal(seen.body.ratio, '9:16');
     assert.equal(seen.body.target_platform, 'feishu');
     assert.equal(seen.body.exec_mode, 'api_popout');

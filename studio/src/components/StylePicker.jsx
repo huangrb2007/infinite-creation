@@ -6,14 +6,26 @@ import { Input } from './ui.jsx';
 
 // 画风选择：带预览图的卡片网格。预览图在 studio/public/styles/<id>.jpg，同一个画面用各画风各出一张，方便对比。
 // value 是画风名（库里的名字或自定义文本）；'' = 不指定。
+const GROUPS = [
+  { id: 'realistic', label: '真人' },
+  { id: '3d', label: '3D（次世代 / 国漫 / 卡通）' },
+];
+
 export default function StylePicker({ value, onChange, allowNone = true }) {
   const inLib = STYLE_LIBRARY.some((s) => s.name === value);
   const [custom, setCustom] = useState(!!value && !inLib);
   const base = import.meta.env.BASE_URL || '/';
   return (
     <div className="flex flex-col gap-2.5">
+      {GROUPS.map((g) => {
+        // 二维画风已隐藏；老项目正在用的那个仍然显示，方便看到当前选择
+        const list = STYLE_LIBRARY.filter((s) => (g.id === 'realistic' ? s.family === 'realistic' : s.family !== 'realistic') && (!s.hidden || s.name === value));
+        if (!list.length) return null;
+        return (
+      <div key={g.id} className="flex flex-col gap-1.5">
+      <span className="text-[11px] font-medium text-[var(--fg-3)]">{g.label}</span>
       <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(132px,1fr))]">
-        {STYLE_LIBRARY.map((s) => {
+        {list.map((s) => {
           const active = !custom && value === s.name;
           return (
             <button
@@ -48,6 +60,9 @@ export default function StylePicker({ value, onChange, allowNone = true }) {
           );
         })}
       </div>
+      </div>
+        );
+      })}
       <div className="flex flex-wrap items-center gap-1.5">
         {allowNone ? (
           <Chip active={!custom && !value} onClick={() => { setCustom(false); onChange(''); }}>不指定（由 AI 按题材选）</Chip>
