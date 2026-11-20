@@ -226,3 +226,20 @@ test('豆包插件：「自动检测」从 manager_path.json 读出画布助手�
   const p = core.getPlugin(cfgWith(), 'doubao-canvas').params.find((x) => x.key === 'manager_exe');
   assert.equal(p.type, 'file');
 });
+
+test('豆包插件：文件里的令牌都过期时，从画布助手界面页取当前令牌', async () => {
+  fs.writeFileSync(path.join(TMP, '.doubao_dola', 'bridge_token.json'), 'stale-1');
+  const srv = http.createServer((req, res) => {
+    if (req.url === '/index.html') { res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end('<html><head><script>window.__BRIDGE_TOKEN__="live-xyz";window.__DBM_DEV__=false;</script></head></html>'); }
+    const ok = req.headers['x-bridge-token'] === 'live-xyz';
+    res.writeHead(req.url === '/api/health' || ok ? 200 : 401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(req.url === '/api/health' ? { status: 'ok', accounts: [{ logged_in: true }] } : ok ? { data: { version: 'live' } } : { error: 'unauthorized' }));
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  try {
+    const cfg = cfgWith({ plugins: { 'doubao-canvas': { params: { manager_url: 'http://127.0.0.1:' + srv.address().port, bridge_token: 'wrong-typed' } } } });
+    const t = await core.testPlugin(cfg, 'doubao-canvas');
+    assert.equal(t.ok, true, t.message);
+    assert.match(t.message, /live/);
+  } finally { srv.close(); }
+});

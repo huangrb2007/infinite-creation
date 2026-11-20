@@ -63,10 +63,29 @@ function baseOf(params) {
 }
 
 // 带令牌重试：401 换下一个候选令牌
+// 画布助手当前实际使用的令牌：它给自己的界面页（/index.html）注入 window.__BRIDGE_TOKEN__。
+// 文件里的令牌可能已经过期（重复启动会覆盖用户目录的镜像；打包版的程序目录令牌也不一定是运行中的那个），
+// 所以文件令牌都被拒（401）时，从本机界面页取一次，按地址缓存。
+const liveTokens = new Map();
+async function liveToken(base) {
+  if (liveTokens.has(base)) return liveTokens.get(base);
+  try {
+    const res = await fetch(base + '/index.html', { signal: AbortSignal.timeout(8000) });
+    const html = await res.text();
+    const m = /window\.__BRIDGE_TOKEN__\s*=\s*"([^"]+)"/.exec(html);
+    const tok = m ? m[1] : '';
+    if (tok) liveTokens.set(base, tok);
+    return tok;
+  } catch { return ''; }
+}
+
 async function call(params, method, p, body, timeoutMs = 60_000) {
   const base = baseOf(params);
   let saw401 = false;
-  for (const tok of tokenCandidates(params)) {
+  const cands = tokenCandidates(params);
+  if (liveTokens.has(base)) cands.unshift(liveTokens.get(base));
+  for (let i = 0; i < cands.length; i++) {
+    const tok = cands[i];
     let res;
     try {
       res = await fetch(base + p, {
@@ -80,7 +99,15 @@ async function call(params, method, p, body, timeoutMs = 60_000) {
       err.code = 'UNREACHABLE';
       throw err;
     }
-    if (res.status === 401) { saw401 = true; continue; }
+    if (res.status === 401) {
+      saw401 = true;
+      if (liveTokens.get(base) === tok) liveTokens.delete(base); // 画布助手重启换了令牌
+      if (i === cands.length - 1) {
+        const live = await liveToken(base);
+        if (live && !cands.includes(live)) cands.push(live);
+      }
+      continue;
+    }
     const text = await res.text();
     let j;
     try { j = JSON.parse(text); } catch { j = { raw: text }; }
