@@ -1,7 +1,7 @@
 {
   "id": "doubao-canvas",
   "name": "豆包画布助手",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "api_version": 1,
   "type": "video",
   "entry": "main.mjs",
@@ -121,7 +121,7 @@
       "label": "执行方式",
       "type": "select",
       "default": "api_popout",
-      "hint": "飞书固定用外部弹窗；Dola 只支持对话 / 画布",
+      "hint": "外部弹窗 / 接口直连 / 画布模式都是在豆包「画布」里生成（前两种走画布接口，只差有没有可见窗口）；只有「对话模式」走豆包对话页。发布目标选飞书时固定用外部弹窗，Dola 只支持对话 / 画布",
       "options": [
         {
           "value": "api_popout",
@@ -170,7 +170,7 @@
       "label": "账号分组",
       "type": "text",
       "default": "",
-      "hint": "留空 = 轮换全部已登录账号"
+      "hint": "留空 = 轮换全部已登录账号。这里填的是画布助手里给账号设的「分组名」，不是发布目标；填了不存在的分组会报「分组里没有可用账号」"
     },
     {
       "key": "concurrency",

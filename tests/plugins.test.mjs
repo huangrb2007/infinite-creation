@@ -9,6 +9,7 @@ import http from 'node:http';
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'ic-plugins-'));
 process.env.IC_DATA_DIR = TMP;
+process.env.IC_CONFIG = path.join(TMP, 'config.json'); // 不碰仓库里的 config.json
 process.env.HOME = TMP; // 令牌文件位置（~/.doubao_dola）指到临时目录
 process.env.USERPROFILE = TMP;
 
@@ -313,4 +314,32 @@ test('豆包插件：「同步登录状态」逐个打开账号页、保存登�
     assert.match(r.message, /同步了 1 个账号：现在在线 2 个/);
     assert.deepEqual(calls.filter((c) => /accounts-(open\?|save|close)/.test(c)), ['/api/ui/accounts-open?id=B&popout=0', '/api/ui/accounts-save-login?id=B', '/api/ui/accounts-close?id=B']);
   } finally { srv.close(); }
+});
+
+test('插件参数：出片时读磁盘上最新保存的设置（长任务中途改执行方式也生效）', async () => {
+  const { CONFIG_PATH } = await import('../lib/core/config.js');
+  const had = fs.existsSync(CONFIG_PATH) ? fs.readFileSync(CONFIG_PATH) : null;
+  const bodies = [];
+  const srv = http.createServer((req, res) => {
+    const send = (j) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(j)); };
+    if (req.url === '/api/generate') { let b = ''; req.on('data', (c) => { b += c; }); req.on('end', () => { bodies.push(JSON.parse(b)); send({ task_id: 'lv' }); }); return; }
+    if (req.url === '/api/tasks/lv') return send({ status: 'cancelled' });
+    send({ status: 'ok', accounts: [] });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  process.env.IC_PLUGIN_POLL_MS = '30';
+  try {
+    const url = 'http://127.0.0.1:' + srv.address().port;
+    const raw = had ? JSON.parse(had.toString('utf8')) : {};
+    raw.catalog = { ...(raw.catalog || {}), plugins: { 'doubao-canvas': { enabled: true, params: { manager_url: url, exec_mode: 'chat' } } } };
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(raw));
+    const cfg = cfgWith({ plugins: { 'doubao-canvas': { params: { manager_url: url, exec_mode: 'api_popout' } } } });
+    const spec = getCatalogSpec(cfg, 'plugin:doubao-canvas');
+    await assert.rejects(core.runWorkflow(cfg, spec, { positive_prompt: 'x', seconds: 15, references: [] }), /取消/);
+    assert.equal(bodies[0].exec_mode, 'chat');
+  } finally {
+    srv.close();
+    delete process.env.IC_PLUGIN_POLL_MS;
+    if (had) fs.writeFileSync(CONFIG_PATH, had); else fs.rmSync(CONFIG_PATH, { force: true });
+  }
 });
