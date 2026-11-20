@@ -170,6 +170,7 @@ function FileField({ f, value, onChange, plugin, params }) {
         <Button variant="secondary" size="sm" onClick={browse} disabled={!!busy}>{busy === 'browse' ? <Spinner size={12} /> : <FolderOpen size={13} />} 浏览</Button>
         {f.detectAction ? <Button variant="secondary" size="sm" onClick={detect} disabled={!!busy}>{busy === 'detect' ? <Spinner size={12} /> : <ScanSearch size={13} />} 自动检测</Button> : null}
       </div>
+      {busy === 'browse' ? <p className="m-0 text-[11.5px] text-[var(--fg-3)]">文件选择框已打开，如果没看到，可能在其它窗口后面（看任务栏的「选择文件」）；也可以点「自动检测」。</p> : null}
       {msg ? <p className={'m-0 text-[11.5px] ' + (msg.ok ? 'text-[var(--success)]' : 'text-[var(--danger)]')}>{msg.text}</p> : null}
     </Field>
   );
