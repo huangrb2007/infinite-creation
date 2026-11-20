@@ -9,7 +9,7 @@ export async function GET() {
   const plugins = listPlugins(cfg).map((p) => ({
     id: p.id, name: p.name, version: p.version, author: p.author, description: p.description, help: p.help,
     type: p.type, model_family: p.model_family, familyName: p.family?.name || '', promptStyle: p.family?.promptStyle || '',
-    capabilities: p.capabilities, params: p.params, builtin: p.builtin, enabled: p.enabled, error: p.error,
+    capabilities: p.capabilities, params: p.params, actions: p.actions || [], builtin: p.builtin, enabled: p.enabled, error: p.error,
     values: pluginParams(cfg, p),
   }));
   return NextResponse.json({ plugins, userDir: USER_PLUGINS_DIR });

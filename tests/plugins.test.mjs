@@ -243,3 +243,28 @@ test('豆包插件：文件里的令牌都过期时，从画布助手界面页�
     assert.match(t.message, /live/);
   } finally { srv.close(); }
 });
+
+test('豆包插件：「同步登录状态」逐个打开账号页、保存登录态、关掉', { timeout: 60_000 }, async () => {
+  const accs = { A: { name: 'A', logged_in: true }, B: { name: 'B', logged_in: false } };
+  const calls = [];
+  const srv = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://x');
+    const send = (j) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(j)); };
+    if (u.pathname === '/index.html') { res.writeHead(200); return res.end('<head><script>window.__BRIDGE_TOKEN__="t1";</script></head>'); }
+    if (u.pathname === '/api/health') return send({ status: 'ok', accounts: Object.values(accs) });
+    if (req.headers['x-bridge-token'] !== 't1') { res.writeHead(401); return res.end('{}'); }
+    calls.push(u.pathname + u.search);
+    if (u.pathname === '/api/accounts') return send({ ok: true, data: Object.values(accs) });
+    if (u.pathname === '/api/ui/accounts-open-state') return send({ ok: true, data: { open: [] } });
+    if (u.pathname === '/api/ui/accounts-save-login') { accs[u.searchParams.get('id')].logged_in = true; return send({ ok: true }); }
+    send({ ok: true });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  try {
+    const cfg = cfgWith({ plugins: { 'doubao-canvas': { params: { manager_url: 'http://127.0.0.1:' + srv.address().port } } } });
+    const r = await core.runPluginAction(cfg, 'doubao-canvas', 'sync_logins');
+    assert.equal(r.ok, true, r.message);
+    assert.match(r.message, /同步了 1 个账号：现在在线 2 个/);
+    assert.deepEqual(calls.filter((c) => /accounts-(open\?|save|close)/.test(c)), ['/api/ui/accounts-open?id=B&popout=0', '/api/ui/accounts-save-login?id=B', '/api/ui/accounts-close?id=B']);
+  } finally { srv.close(); }
+});

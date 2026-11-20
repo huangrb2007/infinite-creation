@@ -94,6 +94,7 @@ export default function PluginPanel({ catalog, setCatalog, Section, onChanged })
                     {p.promptStyle === 'seedance' ? (
                       <p className="m-0 text-[11.5px] leading-relaxed text-[var(--fg-3)]">选它出片时：技能模式的分段与提示词自动改用 seedance-drama-prompt（中文时间轴写法），每段 {(p.capabilities?.durations || [5, 10, 15]).join(' / ')} 秒；精简模式的提示词也按 Seedance 写法拼。</p>
                     ) : null}
+                    {(p.actions || []).length ? <PluginActions plugin={p} params={vals} /> : null}
                     <div className="grid gap-3 sm:grid-cols-2">
                       {p.params.map((f) => (
                         <ParamField key={f.key} f={f} plugin={p} params={vals} value={vals[f.key]} onChange={(v) => setParam(p, f.key, v)} />
@@ -173,5 +174,34 @@ function FileField({ f, value, onChange, plugin, params }) {
       {busy === 'browse' ? <p className="m-0 text-[11.5px] text-[var(--fg-3)]">文件选择框已打开，如果没看到，可能在其它窗口后面（看任务栏的「选择文件」）；也可以点「自动检测」。</p> : null}
       {msg ? <p className={'m-0 text-[11.5px] ' + (msg.ok ? 'text-[var(--success)]' : 'text-[var(--danger)]')}>{msg.text}</p> : null}
     </Field>
+  );
+}
+
+// 插件清单里声明的操作按钮（如豆包画布助手的「同步登录状态」）
+function PluginActions({ plugin, params }) {
+  const [busy, setBusy] = useState('');
+  const [msg, setMsg] = useState(null);
+  async function run(a) {
+    setBusy(a.id);
+    setMsg(null);
+    try {
+      const r = await api.post('/api/plugins/action', { id: plugin.id, action: a.id, params });
+      setMsg({ ok: !!r.ok, text: r.message || (r.ok ? '完成' : '失败') });
+    } catch (e) {
+      setMsg({ ok: false, text: e.message });
+    } finally {
+      setBusy('');
+    }
+  }
+  return (
+    <div className="flex flex-col gap-1.5 rounded-lg border border-[var(--line)] bg-black/15 p-2.5">
+      {plugin.actions.map((a) => (
+        <div key={a.id} className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" size="sm" onClick={() => run(a)} disabled={!!busy}>{busy === a.id ? <Spinner size={12} /> : null} {a.label}</Button>
+          {a.hint ? <span className="min-w-0 flex-1 text-[11px] leading-relaxed text-[var(--fg-4)]">{a.hint}</span> : null}
+        </div>
+      ))}
+      {msg ? <p className={'m-0 text-[11.5px] ' + (msg.ok ? 'text-[var(--success)]' : 'text-[var(--danger)]')}>{msg.text}</p> : null}
+    </div>
   );
 }

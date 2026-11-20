@@ -153,8 +153,46 @@ function accountsSummary(h) {
   return { total: accs.length, logged };
 }
 
+// 画布助手 V11.20 起不再在打开账号时自动保存登录态，界面里也去掉了「保存登录状态」，
+// 只扫码 / 在网页里登录过的号没有 storage_state.json，被当成「未登录 / 掉线」、不参与派发。
+// 这里用画布助手自己的界面接口逐个补存：打开账号页 → 等加载 → 保存登录态 → 关掉（一次只开一个，避免它多开闪退）。
+async function syncLogins(params, onLog) {
+  const list = await call(params, 'GET', '/api/accounts', null, 15_000);
+  const accs = (list?.data || list?.accounts || []).filter((a) => a && a.name);
+  const todo = accs.filter((a) => !a.logged_in);
+  if (!todo.length) return { ok: true, message: '全部 ' + accs.length + ' 个账号都已是在线状态' };
+  let opened = new Set();
+  try {
+    const st = await call(params, 'GET', '/api/ui/accounts-open-state', null, 10_000);
+    opened = new Set(((st?.data?.open) || []).map((x) => String(x?.name || x?.id || '')));
+  } catch {}
+  const q = (name) => '?id=' + encodeURIComponent(name);
+  for (const a of todo) {
+    onLog?.('同步 ' + a.name);
+    try {
+      if (!opened.has(a.name)) await call(params, 'GET', '/api/ui/accounts-open' + q(a.name) + '&popout=0', null, 15_000);
+      await sleep(10_000);   // 等账号网页加载出登录态
+      await call(params, 'GET', '/api/ui/accounts-save-login' + q(a.name), null, 15_000);
+      await sleep(4_000);    // 画布助手异步读 cookie 再落盘（它自己的错开间隔是 3.5 秒）
+      if (!opened.has(a.name)) { await call(params, 'GET', '/api/ui/accounts-close' + q(a.name), null, 10_000); await sleep(2_000); }
+    } catch {}
+  }
+  const after = await call(params, 'GET', '/api/accounts', null, 15_000);
+  const all = (after?.data || after?.accounts || []).filter((a) => a && a.name);
+  const still = all.filter((a) => !a.logged_in).map((a) => a.name);
+  return {
+    ok: true,
+    message: '同步了 ' + todo.length + ' 个账号：现在在线 ' + (all.length - still.length) + ' 个'
+      + (still.length ? '；仍未登录 ' + still.length + ' 个（' + still.slice(0, 12).join('、') + (still.length > 12 ? '…' : '') + '），这些号的网页里确实没有登录，需要在画布助手里重新登录' : ''),
+  };
+}
+
 // 设置页按钮调用的动作
 export const actions = {
+  async sync_logins(params) {
+    if (!(await alive(params))) return { ok: false, message: '连不上画布助手，请先启动它' };
+    return syncLogins(params);
+  },
   // 自动检测画布助手路径：画布助手运行过一次就会把路径写到 ~/.doubao_dola/manager_path.json
   async detect_manager() {
     try {
