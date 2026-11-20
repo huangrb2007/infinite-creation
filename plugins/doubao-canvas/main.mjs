@@ -34,14 +34,26 @@ function readToken(file) {
   } catch { return ''; }
 }
 
+// 画布助手启动时把自己的路径写到 ~/.doubao_dola/manager_path.json（root / dir）
+function managerDirs() {
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.doubao_dola', 'manager_path.json'), 'utf8').replace(/^\uFEFF/, ''));
+    return [...new Set([j.root, j.dir].filter((d) => typeof d === 'string' && d.trim()))];
+  } catch { return []; }
+}
+
 function tokenCandidates(params) {
   const out = [];
   const add = (t) => { t = String(t || '').trim(); if (t && !out.includes(t)) out.push(t); };
   add(params.bridge_token);
   add(process.env.DBM_BRIDGE_TOKEN);
-  add(readToken(path.join(os.homedir(), '.doubao_dola', 'bridge_token.json')));
   const exe = String(params.manager_exe || '').trim().replace(/^"|"$/g, '');
   if (exe) add(readToken(path.join(path.dirname(exe), 'bridge_token.json')));
+  // 画布助手程序目录里的令牌才是它实际校验用的：用户目录那份是「镜像」，
+  // 实测会被重复启动的第二个实例（退出前）覆盖成一个新随机值，导致 401。
+  // 所以先按 ~/.doubao_dola/manager_path.json 找到程序目录读它，再读镜像。
+  for (const dir of managerDirs()) add(readToken(path.join(dir, 'bridge_token.json')));
+  add(readToken(path.join(os.homedir(), '.doubao_dola', 'bridge_token.json')));
   if (process.env.DBM_HOME) add(readToken(path.join(process.env.DBM_HOME, 'bridge_token.json')));
   return out.length ? out : [''];
 }
@@ -90,7 +102,8 @@ async function alive(params) {
 async function ensureManager(params, onProgress) {
   const h = await alive(params);
   if (h) return h;
-  const exe = String(params.manager_exe || '').trim().replace(/^"|"$/g, '');
+  let exe = String(params.manager_exe || '').trim().replace(/^"|"$/g, '');
+  if (!exe) { try { exe = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.doubao_dola', 'manager_path.json'), 'utf8').replace(/^\uFEFF/, '')).exe || ''; } catch {} }
   if (exe && fs.existsSync(exe)) {
     onProgress?.('正在启动豆包画布助手');
     try {

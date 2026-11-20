@@ -189,3 +189,26 @@ test('Seedance 分镜按镜头顺序写，不写秒数；写实画风提醒人�
   assert.match(buildSkillAdapter({ style: '真人写实', engine }), /拦截写实真人脸/);
   assert.ok(!/拦截写实真人脸/.test(buildSkillAdapter({ style: '3D动画电影', engine })));
 });
+
+test('豆包插件：用户目录的令牌镜像过期时，按 manager_path.json 读画布助手目录里的真令牌', async () => {
+  const mgrDir = path.join(TMP, 'mgr');
+  fs.mkdirSync(mgrDir, { recursive: true });
+  fs.writeFileSync(path.join(mgrDir, 'bridge_token.json'), 'real-token');
+  fs.mkdirSync(path.join(TMP, '.doubao_dola'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, '.doubao_dola', 'bridge_token.json'), 'stale-token');
+  fs.writeFileSync(path.join(TMP, '.doubao_dola', 'manager_path.json'), JSON.stringify({ root: mgrDir, dir: mgrDir, exe: '' }));
+  const srv = http.createServer((req, res) => {
+    const ok = req.headers['x-bridge-token'] === 'real-token';
+    res.writeHead(req.url === '/api/health' || ok ? 200 : 401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(req.url === '/api/health' ? { status: 'ok', accounts: [] } : ok ? { data: { version: 'v' } } : { error: 'unauthorized' }));
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  try {
+    const cfg = cfgWith({ plugins: { 'doubao-canvas': { params: { manager_url: 'http://127.0.0.1:' + srv.address().port } } } });
+    const t = await core.testPlugin(cfg, 'doubao-canvas');
+    assert.equal(t.ok, true, t.message);
+  } finally {
+    srv.close();
+    fs.rmSync(path.join(TMP, '.doubao_dola', 'manager_path.json'), { force: true });
+  }
+});
