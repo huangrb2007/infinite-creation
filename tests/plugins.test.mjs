@@ -15,7 +15,7 @@ process.env.USERPROFILE = TMP;
 const core = await import('../lib/core/index.js');
 const { getCatalogSpec } = await import('../lib/core/catalog/index.js');
 const { effectiveNodeSkills } = await import('../lib/agent/agent-loop.js');
-const { buildSkillAdapter, composeSeedancePrompt } = await import('../lib/agent/adaptation-rules.js');
+const { buildSkillAdapter, composeSeedancePrompt, seedanceShotLines, stripSeedanceTimecodes } = await import('../lib/agent/adaptation-rules.js');
 test.after(() => { try { fs.rmSync(TMP, { recursive: true, force: true }); } catch {} });
 
 const cfgWith = (extra = {}) => ({ catalog: { selected: { r2v: 'plugin:doubao-canvas' }, plugins: {}, ...extra } });
@@ -172,4 +172,18 @@ test('导入插件 zip：拒绝越界路径，合法包装到用户目录', asyn
   const bad = new AdmZip();
   bad.addFile('plugin.json', Buffer.from(JSON.stringify({ id: 'Bad Id', type: 'video' })));
   await assert.rejects(core.installPluginZip(bad.toBuffer()), /id 不合法/);
+});
+
+test('Seedance 分镜按镜头顺序写，不写秒数；写实画风提醒人脸会被拦', () => {
+  assert.equal(seedanceShotLines('0-3秒｜近景｜固定镜头：甲看手机\n3.5s-6s｜中景：抬头'), '镜头1：近景，固定镜头：甲看手机\n镜头2：中景：抬头');
+  const t = stripSeedanceTimecodes('风格：3D\n0-4秒｜近景｜推近：甲\n4-9秒｜中景：乙\n声音：只说台词');
+  assert.match(t, /^风格：3D\n镜头1：近景，推近：甲\n镜头2：中景：乙\n声音：只说台词$/);
+  assert.equal(stripSeedanceTimecodes('镜头1：甲'), '镜头1：甲');
+  const lean = composeSeedancePrompt({ duration: 10, sub_shots: '0-5秒｜近景：甲' }, { aspect: '16:9' });
+  assert.match(lean, /镜头1：近景：甲/);
+  assert.match(lean, /时长：10秒$/);
+  assert.ok(!/0-5秒/.test(lean));
+  const engine = core.videoEngineInfo(cfgWith());
+  assert.match(buildSkillAdapter({ style: '真人写实', engine }), /拦截写实真人脸/);
+  assert.ok(!/拦截写实真人脸/.test(buildSkillAdapter({ style: '3D动画电影', engine })));
 });
