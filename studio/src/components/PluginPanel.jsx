@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Puzzle, Upload } from 'lucide-react';
+import { ChevronDown, ChevronRight, FolderOpen, Puzzle, ScanSearch, Upload } from 'lucide-react';
 import { api, uploadBinary } from '../lib/api.js';
 import { Badge, Button, Field, Input, Select, Spinner, Switch } from './ui.jsx';
 import { useToast } from './toast.jsx';
@@ -96,7 +96,7 @@ export default function PluginPanel({ catalog, setCatalog, Section, onChanged })
                     ) : null}
                     <div className="grid gap-3 sm:grid-cols-2">
                       {p.params.map((f) => (
-                        <ParamField key={f.key} f={f} value={vals[f.key]} onChange={(v) => setParam(p, f.key, v)} />
+                        <ParamField key={f.key} f={f} plugin={p} params={vals} value={vals[f.key]} onChange={(v) => setParam(p, f.key, v)} />
                       ))}
                     </div>
                   </>
@@ -115,8 +115,9 @@ export default function PluginPanel({ catalog, setCatalog, Section, onChanged })
   );
 }
 
-function ParamField({ f, value, onChange }) {
+function ParamField({ f, value, onChange, plugin, params }) {
   const label = f.label || f.key;
+  if (f.type === 'file') return <FileField f={f} value={value} onChange={onChange} plugin={plugin} params={params} />;
   if (f.type === 'select') {
     return (
       <Field label={label} hint={f.hint}>
@@ -137,6 +138,39 @@ function ParamField({ f, value, onChange }) {
   return (
     <Field label={label} hint={f.hint}>
       <Input type={f.type === 'password' ? 'password' : 'text'} value={value ?? ''} onChange={(e) => onChange(e.target.value)} placeholder={f.placeholder || ''} className="h-9" />
+    </Field>
+  );
+}
+
+// 本机文件路径：「浏览」由本机后端弹出选择框（浏览器拿不到完整路径），「自动检测」调用插件动作
+function FileField({ f, value, onChange, plugin, params }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState('');
+  const [msg, setMsg] = useState(null);
+  async function browse() {
+    setBusy('browse');
+    try {
+      const r = await api.post('/api/plugins/browse', { filter: f.filter || '', title: f.label || '选择文件' });
+      if (r.ok && r.value) { onChange(r.value); setMsg({ ok: true, text: '已选择，记得「保存配置」' }); }
+      else if (r.message && r.message !== '没有选择文件') setMsg({ ok: false, text: r.message });
+    } catch (e) { toast.error(e.message); } finally { setBusy(''); }
+  }
+  async function detect() {
+    setBusy('detect');
+    try {
+      const r = await api.post('/api/plugins/action', { id: plugin.id, action: f.detectAction, params });
+      if (r.ok && r.value) onChange(r.value);
+      setMsg({ ok: !!r.ok, text: r.message || (r.ok ? '已找到' : '没找到') });
+    } catch (e) { toast.error(e.message); } finally { setBusy(''); }
+  }
+  return (
+    <Field label={f.label || f.key} hint={f.hint}>
+      <div className="flex gap-2">
+        <Input value={value ?? ''} onChange={(e) => onChange(e.target.value)} placeholder={f.placeholder || 'C:\\…\\豆包画布助手.exe'} className="h-9 min-w-0 flex-1" />
+        <Button variant="secondary" size="sm" onClick={browse} disabled={!!busy}>{busy === 'browse' ? <Spinner size={12} /> : <FolderOpen size={13} />} 浏览</Button>
+        {f.detectAction ? <Button variant="secondary" size="sm" onClick={detect} disabled={!!busy}>{busy === 'detect' ? <Spinner size={12} /> : <ScanSearch size={13} />} 自动检测</Button> : null}
+      </div>
+      {msg ? <p className={'m-0 text-[11.5px] ' + (msg.ok ? 'text-[var(--success)]' : 'text-[var(--danger)]')}>{msg.text}</p> : null}
     </Field>
   );
 }

@@ -126,6 +126,20 @@ function accountsSummary(h) {
   return { total: accs.length, logged };
 }
 
+// 设置页按钮调用的动作
+export const actions = {
+  // 自动检测画布助手路径：画布助手运行过一次就会把路径写到 ~/.doubao_dola/manager_path.json
+  async detect_manager() {
+    try {
+      const j = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.doubao_dola', 'manager_path.json'), 'utf8').replace(/^\uFEFF/, ''));
+      if (j.exe && fs.existsSync(j.exe)) return { ok: true, value: j.exe, message: '已找到：' + j.exe };
+      return { ok: false, message: '记录的路径已不存在：' + (j.exe || '（空）') + '，请启动一次画布助手或点「浏览」手动选择' };
+    } catch {
+      return { ok: false, message: '没找到记录：请先启动一次豆包画布助手，或点「浏览」手动选择' };
+    }
+  },
+};
+
 export async function test(params) {
   const h = await alive(params);
   if (!h) {

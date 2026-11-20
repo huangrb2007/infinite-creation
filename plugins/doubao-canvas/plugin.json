@@ -53,9 +53,11 @@
     {
       "key": "manager_exe",
       "label": "豆包画布助手.exe 路径（可选）",
-      "type": "text",
+      "type": "file",
       "default": "",
-      "hint": "填了以后，出片时画布助手没开会自动启动它"
+      "hint": "点「浏览」选择解压目录里的「豆包画布助手.exe」，或点「自动检测」（画布助手运行过一次就能检测到）。填了以后出片时画布助手没开会自动启动它",
+      "filter": "豆包画布助手|*.exe",
+      "detectAction": "detect_manager"
     },
     {
       "key": "target_platform",

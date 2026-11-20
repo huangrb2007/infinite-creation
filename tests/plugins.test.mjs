@@ -212,3 +212,17 @@ test('豆包插件：用户目录的令牌镜像过期时，按 manager_path.jso
     fs.rmSync(path.join(TMP, '.doubao_dola', 'manager_path.json'), { force: true });
   }
 });
+
+test('豆包插件：「自动检测」从 manager_path.json 读出画布助手路径', async () => {
+  const exe = path.join(TMP, 'mgr2', '豆包画布助手.exe');
+  fs.mkdirSync(path.dirname(exe), { recursive: true });
+  fs.writeFileSync(exe, 'x');
+  fs.writeFileSync(path.join(TMP, '.doubao_dola', 'manager_path.json'), JSON.stringify({ exe, root: path.dirname(exe) }));
+  const r = await core.runPluginAction(cfgWith(), 'doubao-canvas', 'detect_manager');
+  assert.equal(r.ok, true, r.message);
+  assert.equal(r.value, exe);
+  const bad = await core.runPluginAction(cfgWith(), 'doubao-canvas', 'nope');
+  assert.equal(bad.ok, false);
+  const p = core.getPlugin(cfgWith(), 'doubao-canvas').params.find((x) => x.key === 'manager_exe');
+  assert.equal(p.type, 'file');
+});
