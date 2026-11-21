@@ -348,7 +348,7 @@ export async function generate(ctx) {
         continue;
       }
       throw new Error('豆包审核未通过（已在同一账号原样重新提交 ' + maxMod + ' 次）：' + (detail || '平台内容审核').slice(0, 160)
-        + '。这是平台对参考图 / 人物的审核，不是提示词文案问题：不要改写提示词，记下这段，继续后面的段落。');
+        + '。先检查' + (pinnedAccount ? '账号 ' + pinnedAccount + ' ' : '这个号') + '有没有在豆包「设置 → 内容生成与产物设置」里打开「素材合规承诺」。这是平台对参考图 / 人物的审核，不是提示词文案问题：不要改写提示词，记下这段，继续后面的段落。');
     }
     if (status === 'error') throw new Error('豆包生成失败：' + (detail || '画布助手没有给出原因').slice(0, 300));
     if (status === 'cancelled') throw new Error('任务在画布助手里被取消' + (detail ? '：' + detail.slice(0, 120) : ''));
