@@ -261,6 +261,10 @@ export async function generate(ctx) {
     resolution: tp === 'feishu' ? String(params.resolution || '1080P') : '',
     exec_mode: execMode,
     allow_paid_quota: false,
+    // 与字字动画插件对齐：只交付无水印原片；对话模式没开始生成时自动回复的内容和次数
+    remove_watermark: true,
+    nudge_text: '生成视频',
+    nudge_max: 6,
   };
   if (!payload.prompt) throw new Error('提示词为空');
   if (params.account_group) payload.account_group = String(params.account_group).trim();

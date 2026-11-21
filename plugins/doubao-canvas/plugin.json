@@ -1,7 +1,7 @@
 {
   "id": "doubao-canvas",
   "name": "豆包画布助手",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "api_version": 1,
   "type": "video",
   "entry": "main.mjs",

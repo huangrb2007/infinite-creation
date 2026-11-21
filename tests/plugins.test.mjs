@@ -343,3 +343,49 @@ test('插件参数：出片时读磁盘上最新保存的设置（长任务中�
     if (had) fs.writeFileSync(CONFIG_PATH, had); else fs.rmSync(CONFIG_PATH, { force: true });
   }
 });
+
+test('选豆包插件后：保留 AIFISHER 流程条目、人物颜值规则、下沉短剧快节奏', async () => {
+  const { buildSkillAdapter } = await import('../lib/agent/adaptation-rules.js');
+  const engine = { promptStyle: 'seedance', durations: [15], name: '豆包画布助手', maxImages: 9 };
+  const t = buildSkillAdapter({ style: '3D都市写实', aspect: '9:16', mainSkill: 'seedance-drama-prompt', flowSkill: 'minimax-drama-prompt', route: 'studio3d', installed: ['studio-assets-3d'], engine });
+  assert.match(t, /一键下沉剧」五步流程/);
+  assert.match(t, /6c\. 人物颜值/);
+  assert.match(t, /45–65 字且至少 3 句/);
+  assert.ok(t.indexOf('6b.') < t.indexOf('6c.'));
+  const skill = fs.readFileSync(path.join(process.cwd(), 'skills/seedance-drama-prompt/SKILL.md'), 'utf8');
+  assert.match(skill, /下沉短剧要快/);
+  assert.ok(!/补反应镜头（听的人的表情）/.test(skill));
+});
+
+test('豆包插件：先传场景、道具图，人物图放最后，@图片编号跟着变', async () => {
+  const mk = (n) => { const f = path.join(TMP, n + '.png'); fs.writeFileSync(f, 'p'); return f; };
+  const a = mk('lindong'), b = mk('wife'), c = mk('room'), d = mk('phone');
+  let body = null;
+  const srv = http.createServer((req, res) => {
+    const send = (j) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(j)); };
+    if (req.url === '/api/generate') { let x = ''; req.on('data', (ch) => { x += ch; }); req.on('end', () => { body = JSON.parse(x); send({ task_id: 'od' }); }); return; }
+    if (req.url === '/api/tasks/od') return send({ status: 'cancelled' });
+    send({ status: 'ok', accounts: [] });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  process.env.IC_PLUGIN_POLL_MS = '30';
+  try {
+    const cfg = cfgWith({ plugins: { 'doubao-canvas': { params: { manager_url: 'http://127.0.0.1:' + srv.address().port } } } });
+    const spec = getCatalogSpec(cfg, 'plugin:doubao-canvas');
+    await assert.rejects(core.runWorkflow(cfg, spec, {
+      positive_prompt: '镜头1：__MINIMAX_H3_REF_1__在__MINIMAX_H3_REF_3__里对__MINIMAX_H3_REF_2__说话，举起__MINIMAX_H3_REF_4__。',
+      seconds: 15,
+      references: [
+        { type: 'image', name: '林冬', label: '林冬（人物形象）', filename: a },
+        { type: 'image', name: '妻子', label: '妻子（人物形象）', filename: b },
+        { type: 'image', name: '出租屋', label: '出租屋（场景背景）', filename: c },
+        { type: 'image', name: '手机', label: '手机（道具）', filename: d },
+      ],
+    }), /取消/);
+    assert.deepEqual(body.image_paths, [c, d, a, b]);
+    assert.match(body.prompt, /^@图片1是出租屋的场景图；@图片2是手机的道具图；@图片3是林冬的角色形象图；@图片4是妻子的角色形象图。\n镜头1：@图片3在@图片1里对@图片4说话，举起@图片2。/);
+  } finally {
+    srv.close();
+    delete process.env.IC_PLUGIN_POLL_MS;
+  }
+});
