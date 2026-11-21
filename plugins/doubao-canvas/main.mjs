@@ -208,6 +208,86 @@ function reserve(account, model, delta) {
   if (!r.mini && !r.fast) reserved.delete(account); else reserved.set(account, r);
 }
 
+// ===== 原片补回：画布助手已经出片、但它下载原片失败（如 SSL 被掐断）时，由本软件自己下载 =====
+// 豆包的原片地址带有效期（路径第二段是十六进制的过期时间戳，一般 7 天）
+export function nwmUrlOf(text) {
+  const s = String(text || '');
+  const m = /host='([^']+)', port=443\): Max retries exceeded with url: (\S+)/.exec(s);
+  if (m) return 'https://' + m[1] + m[2];
+  const m2 = /https?:\/\/[^\s'"（）]+\/video\/[^\s'"（）]+/i.exec(s);
+  return m2 ? m2[0].replace(/[）)，。]+$/, '') : '';
+}
+export function nwmUrlExpired(url, now = Date.now()) {
+  const m = /^https:\/\/[^/]+\/[0-9a-f]{32}\/([0-9a-f]{8})\//i.exec(String(url || ''));
+  if (!m) return false;
+  return parseInt(m[1], 16) * 1000 < now;
+}
+function looksLikeVideo(file) {
+  try {
+    const fd = fs.openSync(file, 'r');
+    const b = Buffer.alloc(12);
+    fs.readSync(fd, b, 0, 12, 0);
+    fs.closeSync(fd);
+    return b.slice(4, 8).toString('latin1') === 'ftyp' && fs.statSync(file).size > 50_000;
+  } catch { return false; }
+}
+function runCmd(cmd, args, timeoutMs) {
+  return new Promise((resolve) => {
+    let done = false;
+    const p = spawn(cmd, args, { windowsHide: true });
+    const t = setTimeout(() => { if (!done) { done = true; try { p.kill(); } catch {} resolve(false); } }, timeoutMs);
+    p.on('error', () => { if (!done) { done = true; clearTimeout(t); resolve(false); } });
+    p.on('exit', (code) => { if (!done) { done = true; clearTimeout(t); resolve(code === 0); } });
+  });
+}
+/** 依次用 Node、Windows 自带 curl、PowerShell 下载，每种多试几次；成功返回 true */
+export async function downloadNwm(url, dst, onProgress = () => {}) {
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  const tmp = dst + '.part';
+  const ok = () => { if (looksLikeVideo(tmp)) { fs.renameSync(tmp, dst); return true; } try { fs.rmSync(tmp, { force: true }); } catch {} return false; };
+  const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', Referer: 'https://www.doubao.com/' };
+  for (let i = 0; i < 4; i++) {
+    try {
+      const r = await fetch(url, { headers, signal: AbortSignal.timeout(180_000) });
+      if (r.ok) {
+        fs.writeFileSync(tmp, Buffer.from(await r.arrayBuffer()));
+        if (ok()) return true;
+      } else if (r.status === 403 || r.status === 404) break; // 过期 / 不存在，换方式也没用
+    } catch {}
+    onProgress('下载原片第 ' + (i + 1) + ' 次没成功，稍后重试');
+    await sleep(Number(process.env.IC_PLUGIN_POLL_MS) ? 10 : [2000, 5000, 10000, 15000][i]);
+  }
+  if (process.platform === 'win32') {
+    // Windows 自带的 curl 走系统的 TLS（Schannel），和画布助手 / Node 用的不一样，常能绕过同一个 SSL 中断
+    if (await runCmd('curl.exe', ['-L', '--retry', '4', '--retry-delay', '3', '--retry-all-errors', '-A', headers['User-Agent'], '-e', headers.Referer, '-o', tmp, url], 300_000) && ok()) return true;
+    const ps = "$ProgressPreference='SilentlyContinue';[Net.ServicePointManager]::SecurityProtocol='Tls12,Tls13';Invoke-WebRequest -UseBasicParsing -Uri $env:IC_NWM_URL -OutFile $env:IC_NWM_OUT -Headers @{Referer='https://www.doubao.com/'}";
+    const okPs = await new Promise((resolve) => {
+      const p = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { windowsHide: true, env: { ...process.env, IC_NWM_URL: url, IC_NWM_OUT: tmp } });
+      const t = setTimeout(() => { try { p.kill(); } catch {} resolve(false); }, 300_000);
+      p.on('error', () => { clearTimeout(t); resolve(false); });
+      p.on('exit', (c) => { clearTimeout(t); resolve(c === 0); });
+    });
+    if (okPs && ok()) return true;
+  }
+  return false;
+}
+/** 画布助手任务 → 已在本机的成片 / 补下载的原片；拿不到返回 '' */
+async function salvage(params, task, taskId, outDir, onProgress) {
+  const src = task?.result_path;
+  fs.mkdirSync(outDir, { recursive: true });
+  if (task?.status === 'done' && src && fs.existsSync(src)) {
+    const dst = path.join(outDir, 'doubao_' + taskId + (path.extname(src) || '.mp4'));
+    fs.copyFileSync(src, dst);
+    return dst;
+  }
+  const url = nwmUrlOf(task?.error || task?.detail);
+  if (!url) return '';
+  if (nwmUrlExpired(url)) { onProgress('原片地址已过期，只能重新生成'); return ''; }
+  onProgress('画布助手已出片但下载原片失败，改由本软件下载');
+  const dst = path.join(outDir, 'doubao_' + taskId + '.mp4');
+  return (await downloadNwm(url, dst, onProgress)) ? dst : '';
+}
+
 // 设置页按钮调用的动作
 export const actions = {
   async sync_logins(params) {
@@ -337,6 +417,19 @@ export async function generate(ctx) {
   }
 
   async function runTask() {
+  // 上次这一段在画布助手里其实已经出片（只是回传失败）：先把那条补回来，不重新生成、不扣额度
+  const rid = String(ctx.recoverTaskId || '').trim();
+  if (rid) {
+    const old = await call(params, 'GET', '/api/tasks/' + encodeURIComponent(rid), null, 15_000).catch(() => null);
+    if (old) {
+      const got = await salvage(params, old, rid, ctx.outDir, onProgress);
+      if (got) {
+        try { recordDone(dataDirOf(params), { account: old.account, taskId: rid, model: payload.model }); } catch {}
+        onProgress('已补回上次生成好的原片（没有重新生成）');
+        return { files: [got], taskId: rid };
+      }
+    }
+  }
   let resp = await call(params, 'POST', '/api/generate', payload);
   let taskId = resp?.task_id;
   if (!taskId && resp?.project_stopped) {
@@ -438,6 +531,14 @@ export async function generate(ctx) {
       last = '';
       quotaSince = 0;
       continue;
+    }
+    if (status === 'error' && /原片下载失败|下载原片失败|原片.*下载/.test(detail)) {
+      const got = await salvage(params, t, taskId, ctx.outDir, onProgress);
+      if (got) {
+        try { recordDone(dataDir, { account: acc || pinnedAccount, taskId, model: payload.model }); } catch {}
+        return { files: [got], taskId };
+      }
+      throw new Error('豆包已出片，但原片下载失败（画布助手和本软件都没下下来，多半是网络 / 代理掐断了连接）。原片地址 7 天内有效：检查网络后点「重生成分镜」会先补回这条，不重新生成、不扣额度。账号「' + (acc || pinnedAccount) + '」');
     }
     if (status === 'error') throw new Error('豆包生成失败：' + (detail || '画布助手没有给出原因').slice(0, 300));
     if (status === 'cancelled') throw new Error('任务在画布助手里被取消' + (detail ? '：' + detail.slice(0, 120) : ''));

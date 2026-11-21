@@ -483,3 +483,45 @@ test('豆包插件：按额度派号——指定有额度的号；号额度用�
     delete process.env.IC_PLUGIN_POLL_MS;
   }
 });
+
+test('豆包插件：画布助手原片下载失败 → 本软件自己下载补回；重生成时先补回上次的成片', async () => {
+  process.env.IC_PLUGIN_POLL_MS = '20';
+  const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypmp42'), Buffer.alloc(60_000, 1)]);
+  let port = 0;
+  let videoHits = 0;
+  let gen = 0;
+  const srv = http.createServer((req, res) => {
+    const send = (j) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(j)); };
+    if (req.url.startsWith('/x/video/')) {
+      videoHits += 1;
+      if (videoHits === 1) { req.socket.destroy(); return; } // 第一次掐断连接
+      res.writeHead(200, { 'Content-Type': 'video/mp4' }); return res.end(mp4);
+    }
+    const errText = () => '原片下载失败：http://127.0.0.1:' + port + '/x/video/a.mp4?lr=unwatermarked （步骤日志）';
+    if (req.url === '/api/generate') { req.resume(); req.on('end', () => { gen += 1; send({ task_id: 'n' + gen }); }); return; }
+    if (req.url === '/api/tasks/n1' || req.url === '/api/tasks/old1') return send({ status: 'error', account: '9', error: errText() });
+    send({ status: 'ok', accounts: [] });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  port = srv.address().port;
+  try {
+    const plug = await import('../plugins/doubao-canvas/main.mjs');
+    assert.equal(plug.nwmUrlOf("x: HTTPSConnectionPool(host='v11-vdl.doubao.com', port=443): Max retries exceeded with url: /5a26/6b0ac56b/video/tos/a/?lr=unwatermarked&x=1 (Caused by SSLError"), 'https://v11-vdl.doubao.com/5a26/6b0ac56b/video/tos/a/?lr=unwatermarked&x=1');
+    assert.equal(plug.nwmUrlExpired('https://v11-vdl.doubao.com/5a26cc299264de1bfeed42795bae1276/6b0ac56b/video/x', Date.parse('2026-11-21T12:00:00Z')), false);
+    assert.equal(plug.nwmUrlExpired('https://v11-vdl.doubao.com/5a26cc299264de1bfeed42795bae1276/6b0ac56b/video/x', Date.parse('2026-12-30T00:00:00Z')), true);
+    const cfg = cfgWith({ plugins: { 'doubao-canvas': { params: { manager_url: 'http://127.0.0.1:' + port } } } });
+    const spec = getCatalogSpec(cfg, 'plugin:doubao-canvas');
+    // 1) 生成时画布助手下载失败 → 插件补下载（第一次被掐断，重试成功）
+    const r = await core.runWorkflow(cfg, spec, { positive_prompt: '镜头1：她回头。', seconds: 15, references: [] });
+    const out = core.pickOutput(r.outputs, 'videos');
+    assert.ok(out?.localPath && fs.readFileSync(out.localPath).slice(4, 8).toString() === 'ftyp');
+    assert.equal(gen, 1);
+    // 2) 重生成一段上次失败的：先补回旧任务的原片，不重新提交
+    const r2 = await core.runWorkflow(cfg, spec, { positive_prompt: '镜头1：她回头。', seconds: 15, references: [], recover_task_id: 'old1' });
+    assert.ok(core.pickOutput(r2.outputs, 'videos')?.localPath);
+    assert.equal(gen, 1, '补回时不应重新提交');
+  } finally {
+    srv.close();
+    delete process.env.IC_PLUGIN_POLL_MS;
+  }
+});
