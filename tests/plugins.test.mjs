@@ -525,3 +525,37 @@ test('豆包插件：画布助手原片下载失败 → 本软件自己下载补
     delete process.env.IC_PLUGIN_POLL_MS;
   }
 });
+
+test('豆包插件：参考图上传失败（没扣额度）→ 自动重提；大图先压成 JPG', async () => {
+  process.env.IC_PLUGIN_POLL_MS = '20';
+  const video = path.join(TMP, 'up-ok.mp4');
+  fs.writeFileSync(video, 'v');
+  // 一张约 1MB 的随机 PNG（ffmpeg 生成；没有 ffmpeg 就用大文件代替，压缩会退回原图）
+  const big = path.join(TMP, 'big.png');
+  const { spawnSync } = await import('node:child_process');
+  const ff = spawnSync('ffmpeg', ['-y', '-f', 'lavfi', '-i', 'nullsrc=s=2600x2600,geq=random(1)*255:128:128', '-frames:v', '1', big], { stdio: 'ignore' });
+  if (ff.status !== 0) fs.writeFileSync(big, Buffer.alloc(800_000, 7));
+  const bodies = [];
+  const srv = http.createServer((req, res) => {
+    const send = (j) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(j)); };
+    if (req.url === '/api/generate') { let b = ''; req.on('data', (c) => { b += c; }); req.on('end', () => { bodies.push(JSON.parse(b)); send({ task_id: 'u' + bodies.length }); }); return; }
+    if (req.url === '/api/tasks/u1') return send({ status: 'error', account: '25', error: '原生图片上传失败，未发送提示词（步骤日志：x）（已停止，需人工点击继续生视频）' });
+    if (req.url === '/api/tasks/u2') return send({ status: 'done', account: '26', result_path: video });
+    send({ status: 'ok', accounts: [] });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  try {
+    const cfg = cfgWith({ plugins: { 'doubao-canvas': { params: { manager_url: 'http://127.0.0.1:' + srv.address().port } } } });
+    const spec = getCatalogSpec(cfg, 'plugin:doubao-canvas');
+    const r = await core.runWorkflow(cfg, spec, { positive_prompt: '镜头1：她回头。', seconds: 15, references: [{ type: 'image', name: '林冬', label: '林冬（人物形象）', filename: big }] });
+    assert.ok(core.pickOutput(r.outputs, 'videos')?.localPath);
+    assert.equal(bodies.length, 2);
+    assert.equal(bodies[1].prompt, bodies[0].prompt);
+    if (ff.status === 0) {
+      assert.match(bodies[0].image_paths[0], /_up\.jpg$/);
+    }
+  } finally {
+    srv.close();
+    delete process.env.IC_PLUGIN_POLL_MS;
+  }
+});

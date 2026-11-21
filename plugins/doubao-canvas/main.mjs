@@ -352,6 +352,8 @@ function nearestRatio(r) {
   }, '16:9');
 }
 
+// 画布助手报参考图没传上去 / 页面没就绪（提示词还没发出，不扣额度）
+const UPLOAD_FAIL_RE = /图片上传(失败|超过)|上传参考图失败|未发送提示词|未发送生成|参数尚未就绪/;
 const MODERATION_RE = /审核不通过|审核未通过|业务码[:：]\s*2(?!\d)|compliance|合规/i;
 
 export async function generate(ctx) {
@@ -387,6 +389,10 @@ export async function generate(ctx) {
     nudge_max: 6,
   };
   if (!payload.prompt) throw new Error('提示词为空');
+  // 参考图先压成 JPG 再交给画布助手上传（大 PNG 上传慢、容易「原生图片上传失败」）
+  if (params.compress_images !== false && params.compress_images !== 'false' && typeof ctx.shrinkImage === 'function' && payload.image_paths.length) {
+    payload.image_paths = await Promise.all(payload.image_paths.map((f) => ctx.shrinkImage(f)));
+  }
   if (params.account_group) payload.account_group = String(params.account_group).trim();
 
   // 按额度派号（插件设置里打开）：挑今天还能出这个模型的号直接指定，用完的号不再派
@@ -451,6 +457,8 @@ export async function generate(ctx) {
   let last = '';
   const maxMod = Math.max(0, Math.min(50, Math.round(Number(params.moderation_retries ?? 10))));
   let modTries = 0;
+  let uploadTries = 0;
+  const maxUpload = Math.max(0, Math.min(10, Math.round(Number(params.upload_retries ?? 3))));
   const dataDir = dataDirOf(params);
   while (Date.now() < deadline) {
     if (ctx.isAborted?.()) throw new Error('已取消（画布助手里的这条任务请手动停止）');
@@ -530,6 +538,24 @@ export async function generate(ctx) {
       ctx.onSubmitted?.(taskId);
       last = '';
       quotaSince = 0;
+      continue;
+    }
+    if (status === 'error' && UPLOAD_FAIL_RE.test(detail) && uploadTries < maxUpload) {
+      // 参考图没传上去、提示词还没发出：没用额度，换个号原样重提
+      uploadTries += 1;
+      onProgress('参考图上传失败（没扣额度），第 ' + uploadTries + '/' + maxUpload + ' 次重新提交');
+      await sleep(Math.min(20_000, (poll / 5000) * 5000 * uploadTries));
+      const p4 = { ...payload, generation_round: (payload.generation_round || 0) + 700_000 + uploadTries * 1000 + (Date.now() % 997), force_new_window: true };
+      if (pinnedAccount) p4.account = pinnedAccount; else delete p4.account;
+      let r4 = await call(params, 'POST', '/api/generate', p4);
+      if (!r4?.task_id && r4?.project_stopped) {
+        await call(params, 'POST', '/api/tasks/resume', {});
+        r4 = await call(params, 'POST', '/api/generate', p4);
+      }
+      if (!r4?.task_id) throw new Error('参考图上传失败后重新提交，画布助手没有接单：' + String(r4?.error || r4?.message || JSON.stringify(r4)).slice(0, 200));
+      taskId = r4.task_id;
+      ctx.onSubmitted?.(taskId);
+      last = '';
       continue;
     }
     if (status === 'error' && /原片下载失败|下载原片失败|原片.*下载/.test(detail)) {
