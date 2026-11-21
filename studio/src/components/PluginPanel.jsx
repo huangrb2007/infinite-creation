@@ -186,7 +186,7 @@ function PluginActions({ plugin, params }) {
     setMsg(null);
     try {
       const r = await api.post('/api/plugins/action', { id: plugin.id, action: a.id, params });
-      setMsg({ ok: !!r.ok, text: r.message || (r.ok ? '完成' : '失败') });
+      setMsg({ ok: !!r.ok, text: r.message || (r.ok ? '完成' : '失败'), table: r.table || null });
     } catch (e) {
       setMsg({ ok: false, text: e.message });
     } finally {
@@ -201,7 +201,28 @@ function PluginActions({ plugin, params }) {
           {a.hint ? <span className="min-w-0 flex-1 text-[11px] leading-relaxed text-[var(--fg-4)]">{a.hint}</span> : null}
         </div>
       ))}
-      {msg ? <p className={'m-0 text-[11.5px] ' + (msg.ok ? 'text-[var(--success)]' : 'text-[var(--danger)]')}>{msg.text}</p> : null}
+      {msg ? <p className={'m-0 whitespace-pre-line text-[11.5px] ' + (msg.ok ? 'text-[var(--success)]' : 'text-[var(--danger)]')}>{msg.text}</p> : null}
+      {msg?.table?.rows?.length ? <ActionTable table={msg.table} /> : null}
+    </div>
+  );
+}
+
+// 插件动作返回的表格（如「今日额度」）
+function ActionTable({ table }) {
+  return (
+    <div className="max-h-[320px] overflow-auto rounded-md border border-[var(--line)]">
+      <table className="w-full border-collapse text-[11.5px]">
+        <thead className="sticky top-0 bg-[var(--bg-2,#1b1b1f)]">
+          <tr>{table.columns.map((c) => <th key={c} className="whitespace-nowrap px-2 py-1.5 text-left font-medium text-[var(--fg-3)]">{c}</th>)}</tr>
+        </thead>
+        <tbody>
+          {table.rows.map((row, i) => (
+            <tr key={i} className="border-t border-[var(--line)]">
+              {row.map((v, j) => <td key={j} className="whitespace-nowrap px-2 py-1 text-[var(--fg-2,var(--fg))]">{String(v ?? '')}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

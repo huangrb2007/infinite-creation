@@ -357,7 +357,7 @@ test('选豆包插件后：保留 AIFISHER 流程条目、人物颜值规则、�
   assert.ok(!/补反应镜头（听的人的表情）/.test(skill));
 });
 
-test('豆包插件：先传场景、道具图，人物图放最后，@图片编号跟着变', async () => {
+test('豆包插件：参考图按原顺序传（人物在前，场景、道具在后），@图片编号对应', async () => {
   const mk = (n) => { const f = path.join(TMP, n + '.png'); fs.writeFileSync(f, 'p'); return f; };
   const a = mk('lindong'), b = mk('wife'), c = mk('room'), d = mk('phone');
   let body = null;
@@ -382,8 +382,102 @@ test('豆包插件：先传场景、道具图，人物图放最后，@图片编�
         { type: 'image', name: '手机', label: '手机（道具）', filename: d },
       ],
     }), /取消/);
-    assert.deepEqual(body.image_paths, [c, d, a, b]);
-    assert.match(body.prompt, /^@图片1是出租屋的场景图；@图片2是手机的道具图；@图片3是林冬的角色形象图；@图片4是妻子的角色形象图。\n镜头1：@图片3在@图片1里对@图片4说话，举起@图片2。/);
+    assert.deepEqual(body.image_paths, [a, b, c, d]);
+    assert.match(body.prompt, /^@图片1是林冬的角色形象图；@图片2是妻子的角色形象图；@图片3是出租屋的场景图；@图片4是手机的道具图。\n镜头1：@图片1在@图片3里对@图片2说话，举起@图片4。/);
+  } finally {
+    srv.close();
+    delete process.env.IC_PLUGIN_POLL_MS;
+  }
+});
+
+test('豆包额度：mini / fast 共用一份额度，按比例扣；0 点清零；用完记 0；校正提示', async () => {
+  const qm = await import('../plugins/doubao-canvas/quota.mjs');
+  const cap = { mini: 5, fast: 2 };
+  assert.deepEqual(({ ...qm.remainingOf({ mini: 0, fast: 1 }, cap) }), { mini: 2, fast: 1, share: 0.5 });
+  assert.equal(qm.remainingOf({ mini: 2, fast: 0 }, cap).fast, 1);
+  assert.equal(qm.remainingOf({ mini: 3, fast: 0 }, cap).fast, 0);
+  assert.equal(qm.remainingOf({ mini: 3, fast: 0 }, cap).mini, 2);
+  assert.equal(qm.modelKind('seedance2.0mini'), 'mini');
+  assert.equal(qm.modelKind('Seedance 2.5（豆包）'), 'fast');
+  // 北京时间：UTC 16:30 已经是第二天
+  assert.equal(qm.bjDay(Date.parse('2026-11-21T16:30:00Z')), '2026-11-22');
+
+  const dir = fs.mkdtempSync(path.join(TMP, 'quota-'));
+  const now = Date.parse('2026-11-21T06:00:00Z'); // 北京 14:00
+  const sec = (iso) => Date.parse(iso) / 1000;
+  const tasks = [
+    { id: 't1', status: 'done', account: '1', model: 'seedance2.0fast', created: sec('2026-11-21T02:00:00Z') },
+    { id: 't2', status: 'done', account: '2', model: 'seedance2.0mini', created: sec('2026-11-21T02:00:00Z') },
+    { id: 't3', status: 'done', account: '2', model: 'seedance2.0mini', created: sec('2026-11-20T15:00:00Z') }, // 北京 23:00 前一天，不算
+    { id: 't4', status: 'error', account: '1', model: 'seedance2.0fast', created: sec('2026-11-21T03:00:00Z'), error: '审核不通过' },
+  ];
+  const accounts = [
+    { name: '1', logged_in: true, group: '' }, { name: '2', logged_in: true, group: '' },
+    { name: '3', logged_in: true, forced_cooldown: true, last_error: '额度耗尽' },
+    { name: '4', logged_in: true, forced_cooldown: true, last_error: '生成失败，请重试（业务码：3）' },
+  ];
+  qm.recordDone(dir, { account: '1', taskId: 't1', model: 'seedance2.0fast', ts: now }); // 和任务列表重复，按任务号去重
+  const q = qm.buildQuota({ dataDir: dir, params: {}, tasks, accounts, now });
+  const row = (n) => q.rows.find((r) => r.account === n);
+  assert.deepEqual(row('1').used, { mini: 0, fast: 1 });
+  assert.deepEqual([row('1').remaining.mini, row('1').remaining.fast], [2, 1]);
+  assert.deepEqual([row('2').remaining.mini, row('2').remaining.fast], [4, 1]);
+  assert.equal(row('3').state, '今日用完');
+  assert.match(row('4').state, /冷却中/);
+  assert.deepEqual(q.total, { mini: 6, fast: 2 });
+  assert.equal(qm.pickAccount(q, 'seedance2.0fast'), '1');
+  // 预留：1 号已派出一段 fast → 1 号剩 0，改派 2 号
+  assert.equal(qm.pickAccount(q, 'seedance2.0fast', { reserved: new Map([['1', { mini: 0, fast: 1 }]]) }), '2');
+
+  // 校正：两个号只用 fast 都在第 3 次后才用完 → 建议改成 3
+  const dir2 = fs.mkdtempSync(path.join(TMP, 'quota-'));
+  for (const acc of ['a', 'b']) {
+    for (let i = 0; i < 3; i++) qm.recordDone(dir2, { account: acc, taskId: acc + i, model: 'fast', ts: now });
+    qm.recordExhausted(dir2, { account: acc, ts: now });
+  }
+  assert.match(qm.buildQuota({ dataDir: dir2, now }).hint, /改成 3/);
+});
+
+test('豆包插件：按额度派号——指定有额度的号；号额度用完时撤单换号重提', async () => {
+  process.env.IC_PLUGIN_POLL_MS = '30';
+  const video = path.join(TMP, 'quota-ok.mp4');
+  fs.writeFileSync(video, 'q');
+  const bodies = [];
+  const cancelled = [];
+  const accounts = [{ name: 'A', logged_in: true }, { name: 'B', logged_in: true }];
+  const srv = http.createServer((req, res) => {
+    const send = (j) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(j)); };
+    if (req.url === '/api/accounts') return send({ ok: true, data: accounts });
+    if (req.url === '/api/tasks') return send({ ok: true, tasks: [] });
+    if (req.method === 'POST') {
+      let b = '';
+      req.on('data', (c) => { b += c; });
+      req.on('end', () => {
+        const j = JSON.parse(b || '{}');
+        if (req.url === '/api/tasks/cancel') { cancelled.push(j.task_id); return send({ ok: true }); }
+        bodies.push(j); send({ task_id: 'q' + bodies.length });
+      });
+      return;
+    }
+    if (req.url === '/api/tasks/q1') return send({ status: 'quota_exhausted', account: bodies[0]?.account, detail: '额度用完' });
+    if (req.url === '/api/tasks/q2') return send({ status: 'done', account: bodies[1]?.account, result_path: video });
+    send({ status: 'ok', accounts });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  try {
+    const cfg = cfgWith({ plugins: { 'doubao-canvas': { params: { manager_url: 'http://127.0.0.1:' + srv.address().port, quota_dispatch: true } } } });
+    const spec = getCatalogSpec(cfg, 'plugin:doubao-canvas');
+    const r = await core.runWorkflow(cfg, spec, { positive_prompt: '镜头1：她回头。', seconds: 15, references: [] });
+    assert.ok(['A', 'B'].includes(bodies[0].account));
+    assert.ok(['A', 'B'].includes(bodies[1].account) && bodies[1].account !== bodies[0].account);
+    assert.deepEqual(cancelled, ['q1']);
+    assert.ok(core.pickOutput(r.outputs, 'videos')?.localPath);
+    const st = await core.runPluginAction(cfg, 'doubao-canvas', 'quota_status');
+    assert.equal(st.ok, true, st.message);
+    const rows = Object.fromEntries(st.table.rows.map((x) => [x[0], x]));
+    assert.equal(rows[bodies[0].account][6], '今日用完');
+    assert.equal(rows[bodies[1].account][3], 1);
+    assert.equal(st.value.current, 1);
   } finally {
     srv.close();
     delete process.env.IC_PLUGIN_POLL_MS;

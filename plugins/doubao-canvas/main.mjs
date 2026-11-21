@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { buildQuota, recordDone, recordExhausted, pickAccount, modelKind } from './quota.mjs';
 
 const TARGETS = {
   doubao: '豆包生成（官方无水印原片）',
@@ -187,11 +188,50 @@ async function syncLogins(params, onLog) {
   };
 }
 
+function dataDirOf(params) {
+  return params.__data_dir || process.env.IC_DATA_DIR || path.join(os.homedir(), '.duanju-studio');
+}
+async function fetchQuota(params) {
+  const [acc, tl] = await Promise.all([
+    call(params, 'GET', '/api/accounts', null, 15_000).catch(() => null),
+    call(params, 'GET', '/api/tasks', null, 15_000).catch(() => null),
+  ]);
+  return buildQuota({ dataDir: dataDirOf(params), params, accounts: acc?.data || acc?.accounts || [], tasks: tl?.tasks || [] });
+}
+// 按额度派号时，本软件已派出、还没出结果的段（防止并发几段挑中同一个快用完的号）
+const reserved = (globalThis.__icDoubaoReserved = globalThis.__icDoubaoReserved || new Map());
+function reserve(account, model, delta) {
+  if (!account) return;
+  const r = reserved.get(account) || { mini: 0, fast: 0 };
+  const k = modelKind(model);
+  r[k] = Math.max(0, r[k] + delta);
+  if (!r.mini && !r.fast) reserved.delete(account); else reserved.set(account, r);
+}
+
 // 设置页按钮调用的动作
 export const actions = {
   async sync_logins(params) {
     if (!(await alive(params))) return { ok: false, message: '连不上画布助手，请先启动它' };
     return syncLogins(params);
+  },
+  // 今日额度：每个号已用 / 还能出几次（本软件记账 + 画布助手任务列表合并）
+  async quota_status(params) {
+    if (!(await alive(params))) return { ok: false, message: '连不上画布助手，请先启动它' };
+    const q = await fetchQuota(params);
+    const model = String(params.model || 'seedance2.0fast');
+    const k = modelKind(model);
+    const usable = q.rows.filter((r) => r.usable).length;
+    return {
+      ok: true,
+      message: q.day + '（北京时间 0 点清零）：' + q.rows.length + ' 个号，' + usable + ' 个可用；合计还能出 mini ' + q.total.mini + ' 次 / fast ' + q.total.fast + ' 次'
+        + '（当前模型 ' + model + ' → 还能出 ' + q.total[k] + ' 段）。口径：每号每天 mini ' + q.cap.mini + ' 次或 fast ' + q.cap.fast + ' 次共用，只数成功出片。'
+        + (q.hint ? '\n校正建议：' + q.hint : ''),
+      table: {
+        columns: ['账号', '分组', '已用 mini', '已用 fast', '还能 mini', '还能 fast', '状态'],
+        rows: q.rows.map((r) => [r.account, r.group, r.used.mini, r.used.fast, r.remaining.mini, r.remaining.fast, r.state]),
+      },
+      value: { total: q.total, cap: q.cap, day: q.day, model, current: q.total[k] },
+    };
   },
   // 自动检测画布助手路径：画布助手运行过一次就会把路径写到 ~/.doubao_dola/manager_path.json
   async detect_manager() {
@@ -269,6 +309,34 @@ export async function generate(ctx) {
   if (!payload.prompt) throw new Error('提示词为空');
   if (params.account_group) payload.account_group = String(params.account_group).trim();
 
+  // 按额度派号（插件设置里打开）：挑今天还能出这个模型的号直接指定，用完的号不再派
+  const dispatch = params.quota_dispatch === true || params.quota_dispatch === 'true';
+  let pinnedAccount = '';
+  let held = '';
+  const pick = async (exclude = '') => {
+    const q = await fetchQuota(params);
+    if (exclude) q.rows = q.rows.map((r) => (r.account === exclude ? { ...r, usable: false } : r));
+    const a = pickAccount(q, payload.model, { group: payload.account_group || '', reserved });
+    if (!a) {
+      throw new Error('今天' + (payload.account_group ? '分组「' + payload.account_group + '」里' : '') + '所有可用账号的 '
+        + (modelKind(payload.model) === 'mini' ? 'mini' : 'fast') + ' 免费额度都用完了（北京时间 0 点恢复）。可以换成 mini 模型、加账号，或在插件设置里关掉「按额度派号」交给画布助手自己轮换');
+    }
+    return a;
+  };
+  const hold = (a) => { if (held) reserve(held, payload.model, -1); held = a; if (a) reserve(a, payload.model, +1); };
+  if (dispatch) {
+    pinnedAccount = await pick();
+    payload.account = pinnedAccount;
+    hold(pinnedAccount);
+    onProgress('按额度派到账号 ' + pinnedAccount);
+  }
+  try {
+    return await runTask();
+  } finally {
+    hold('');
+  }
+
+  async function runTask() {
   let resp = await call(params, 'POST', '/api/generate', payload);
   let taskId = resp?.task_id;
   if (!taskId && resp?.project_stopped) {
@@ -290,7 +358,7 @@ export async function generate(ctx) {
   let last = '';
   const maxMod = Math.max(0, Math.min(50, Math.round(Number(params.moderation_retries ?? 10))));
   let modTries = 0;
-  let pinnedAccount = '';
+  const dataDir = dataDirOf(params);
   while (Date.now() < deadline) {
     if (ctx.isAborted?.()) throw new Error('已取消（画布助手里的这条任务请手动停止）');
     await sleep(poll);
@@ -324,6 +392,7 @@ export async function generate(ctx) {
       fs.mkdirSync(ctx.outDir, { recursive: true });
       const dst = path.join(ctx.outDir, 'doubao_' + taskId + (path.extname(src) || '.mp4'));
       fs.copyFileSync(src, dst);
+      try { recordDone(dataDir, { account: acc || pinnedAccount, taskId, model: payload.model }); } catch {}
       return { files: [dst], taskId };
     }
     if (status === 'compliance_rejection' || (status === 'error' && MODERATION_RE.test(detail))) {
@@ -350,6 +419,26 @@ export async function generate(ctx) {
       throw new Error('豆包审核未通过（已在同一账号原样重新提交 ' + maxMod + ' 次）：' + (detail || '平台内容审核').slice(0, 160)
         + '。先检查' + (pinnedAccount ? '账号 ' + pinnedAccount + ' ' : '这个号') + '有没有在豆包「设置 → 内容生成与产物设置」里打开「素材合规承诺」。这是平台对参考图 / 人物的审核，不是提示词文案问题：不要改写提示词，记下这段，继续后面的段落。');
     }
+    if ((status === 'quota_exhausted' || (status === 'error' && /额度/.test(detail))) && (acc || pinnedAccount)) {
+      try { recordExhausted(dataDir, { account: acc || pinnedAccount }); } catch {}
+    }
+    if (pinnedAccount && (status === 'quota_exhausted' || (status === 'error' && /额度/.test(detail)))) {
+      // 指定了账号时画布助手不会自己换号（会一直等这个号）：撤掉这条，换号重新提交
+      const old = pinnedAccount;
+      await call(params, 'POST', '/api/tasks/cancel', { task_id: taskId }).catch(() => {});
+      pinnedAccount = dispatch ? await pick(old) : '';
+      hold(dispatch ? pinnedAccount : '');
+      onProgress('账号 ' + old + ' 今天额度用完，' + (pinnedAccount ? '换到账号 ' + pinnedAccount : '交给画布助手换号') + '重新提交');
+      const p3 = { ...payload, generation_round: (payload.generation_round || 0) + 500_000 + (Date.now() % 997), force_new_window: true };
+      if (pinnedAccount) p3.account = pinnedAccount; else delete p3.account;
+      const r3 = await call(params, 'POST', '/api/generate', p3);
+      if (!r3?.task_id) throw new Error('换号重新提交，画布助手没有接单：' + String(r3?.error || r3?.message || JSON.stringify(r3)).slice(0, 200));
+      taskId = r3.task_id;
+      ctx.onSubmitted?.(taskId);
+      last = '';
+      quotaSince = 0;
+      continue;
+    }
     if (status === 'error') throw new Error('豆包生成失败：' + (detail || '画布助手没有给出原因').slice(0, 300));
     if (status === 'cancelled') throw new Error('任务在画布助手里被取消' + (detail ? '：' + detail.slice(0, 120) : ''));
     if (status === 'quota_exhausted') {
@@ -359,4 +448,5 @@ export async function generate(ctx) {
     } else quotaSince = 0;
   }
   throw new Error('豆包生成超时（' + Math.round(timeoutSec / 60) + ' 分钟）');
+  }
 }
