@@ -590,12 +590,22 @@ test('技能库：停用的技能 Agent 看不到，重新扫描不把开关打�
   core.Skills.upsert({ ...core.Skills.getByName('seedance-drama-prompt'), enabled: true });
 });
 
-test('装了 Seedance 爽剧技能包：流水线各环节改用包里的技能', async () => {
+test('编排写什么就用什么：装了爽剧技能包但编排没选它，不会偷偷换', async () => {
   const { effectiveNodeSkills } = await import('../lib/agent/agent-loop.js');
-  const installed = ['drama-script', 'script-brief', 'drama-shot-prompt', 'seedance-storyboard-generator', 'seedance-prompts-skill', 'seedance-prompt-zh', 'seedance-drama-prompt', 'novel-adaptation'];
+  const installed = ['drama-script', 'script-brief', 'drama-shot-prompt', 'seedance-storyboard-generator', 'seedance-prompts-skill', 'seedance-prompt-zh', 'novel-adaptation', 'tts-voice-design'];
   const r = effectiveNodeSkills(null, installed, { style: '3D家庭伦理' }, { promptStyle: 'seedance', durations: [15] });
-  assert.equal(r.nodes.pipeline.skills[0], 'drama-shot-prompt');
-  assert.deepEqual(r.nodes.video_prompt.skills.slice(0, 3), ['seedance-storyboard-generator', 'seedance-prompts-skill', 'seedance-prompt-zh']);
-  assert.equal(r.nodes.script.skills[0], 'drama-script');
-  assert.ok(!r.nodes.storyboard.skills.includes('seedance-drama-prompt'));
+  assert.ok(!r.nodes.video_prompt.skills.includes('seedance-storyboard-generator'));
+  assert.deepEqual(r.nodes.voice.skills, ['tts-voice-design']);
+});
+
+test('「套用 Seedance 爽剧技能包」预设：编排里写的就是运行时用的', async () => {
+  const sh = await import('../lib/shared/index.js');
+  const { effectiveNodeSkills } = await import('../lib/agent/agent-loop.js');
+  const pipe = sh.seedancePackPipeline(sh.defaultSkillPipeline());
+  assert.deepEqual(pipe.nodes.video_prompt.skills, ['seedance-storyboard-generator', 'seedance-prompts-skill', 'seedance-prompt-zh']);
+  assert.deepEqual(pipe.nodes.voice.skills, ['tts-voice-design']);
+  assert.deepEqual(pipe.nodes.novel.skills, ['webnovel-writing'], '生成小说环节不动');
+  const installed = [...sh.SEEDANCE_PACK_SKILLS, ...sh.SEEDANCE_PACK_HELPERS];
+  const r = effectiveNodeSkills(pipe, installed, { style: '3D家庭伦理' }, { promptStyle: 'seedance', durations: [15] });
+  for (const [id, list] of Object.entries(sh.SEEDANCE_PACK_NODES)) assert.deepEqual(r.nodes[id].skills, list, id);
 });

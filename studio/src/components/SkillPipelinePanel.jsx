@@ -23,8 +23,8 @@ import {
   X,
 } from 'lucide-react';
 import { api, uploadBinary } from '../lib/api.js';
-import { SKILL_PIPELINE_NODES, defaultSkillPipeline, skillMeta, SKILL_MODE_LABEL } from '@shared';
-import { Button, SearchInput, Spinner, Switch } from './ui.jsx';
+import { SKILL_PIPELINE_NODES, defaultSkillPipeline, skillMeta, SKILL_MODE_LABEL, seedancePackPipeline, SEEDANCE_PACK_SKILLS, SEEDANCE_PACK_HELPERS } from '@shared';
+import { Button, Input, SearchInput, Select, Spinner, Switch } from './ui.jsx';
 import { useToast } from './toast.jsx';
 
 // 每个环节一个图标，让轨道上的圆节点一眼可辨。
@@ -53,6 +53,8 @@ export default function SkillPipelinePanel({ cfg, setCfg, setSavedCfg, onlyNode 
     [onlyNode],
   );
   const [skills, setSkills] = useState([]);
+  const [allSkills, setAllSkills] = useState([]);
+  const [effective, setEffective] = useState(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -112,8 +114,8 @@ export default function SkillPipelinePanel({ cfg, setCfg, setSavedCfg, onlyNode 
   const loadSkills = useCallback(() => {
     api
       .get('/api/skills')
-      // 技能库里停用的不出现在编排的可选列表里
-      .then((list) => setSkills((list || []).filter((s) => s.enabled !== false)))
+      // 技能库里停用的不出现在编排的可选列表里；编排里已经写着的停用技能标成「不会用」
+      .then((list) => { setAllSkills(list || []); setSkills((list || []).filter((s) => s.enabled !== false)); })
       .catch((e) => toast.error(e.message))
       .finally(() => setLoading(false));
   }, []);
@@ -226,9 +228,63 @@ export default function SkillPipelinePanel({ cfg, setCfg, setSavedCfg, onlyNode 
     setNode(id, { skills: next });
   }
 
+  // 实际会用到的技能（按已保存的配置 + 技能库开关 + 出片引擎，和 Agent 运行时同一套逻辑）
+  const loadEffective = useCallback(() => { api.get('/api/skills/effective').then(setEffective).catch(() => {}); }, []);
+  useEffect(() => { loadEffective(); }, [loadEffective]);
+  const enabledSet = useMemo(() => new Set(skills.map((s) => s.name)), [skills]);
+  const statusOf = (name) => (enabledSet.has(name) ? '' : allSkills.some((s) => s.name === name) ? '已停用 · 不会用' : '未安装 · 不会用');
+  const packMissing = SEEDANCE_PACK_SKILLS.concat(SEEDANCE_PACK_HELPERS).filter((n) => !enabledSet.has(n));
+
+  // —— 编排模板：不同的技能排列各存一份，用哪种就选哪个 ——
+  // 内置两份（系统默认 / Seedance 爽剧技能包），其余是用户「另存为模板」存的，放在 cfg.skillPipeline.templates
+  const sp = cfg.skillPipeline || {};
+  const userTemplates = Array.isArray(sp.templates) ? sp.templates : [];
+  const BUILTIN_TEMPLATES = [
+    { id: 'builtin:seedance-pack', name: 'Seedance 爽剧技能包（豆包 / 即梦出片）', builtin: true, make: () => seedancePackPipeline({ nodes: nodes }).nodes, needs: SEEDANCE_PACK_SKILLS.concat(SEEDANCE_PACK_HELPERS) },
+    { id: 'builtin:default', name: '系统默认', builtin: true, make: () => defaultSkillPipeline().nodes, needs: [] },
+  ];
+  const allTemplates = [...BUILTIN_TEMPLATES, ...userTemplates.map((t) => ({ ...t, make: () => JSON.parse(JSON.stringify(t.nodes || {})) }))];
+  const activeTpl = allTemplates.find((t) => t.id === sp.template) || null;
+  const pickNodes = (n) => JSON.stringify(Object.fromEntries(SKILL_PIPELINE_NODES.map((m) => [m.id, (n?.[m.id]?.skills) || []])));
+  const tplDirty = !!activeTpl && pickNodes(activeTpl.make()) !== pickNodes(nodes);
+  const [tplName, setTplName] = useState('');
+  const [savingTpl, setSavingTpl] = useState(false);
+
+  function applyTemplate(id) {
+    const t = allTemplates.find((x) => x.id === id);
+    if (!t) return;
+    const missing = (t.needs || []).filter((n) => !enabledSet.has(n));
+    setCfg((c) => ({ ...c, skillPipeline: { ...(c.skillPipeline || {}), useSkills: true, nodes: t.make(), template: t.id } }));
+    setHoverId('');
+    setPinnedId('');
+    if (missing.length) toast.error('已切到「' + t.name + '」，但这些技能还没导入或停用了：' + missing.join('、') + '（先到「技能库」导入 / 打开）');
+    else toast.success('已切到模板「' + t.name + '」，点「保存配置」后生效');
+  }
+
+  function saveAsTemplate() {
+    const name = tplName.trim();
+    if (!name) { toast.error('先写模板名'); return; }
+    const same = userTemplates.find((t) => t.name === name);
+    const tpl = { id: same ? same.id : 'tpl-' + Date.now().toString(36), name, nodes: JSON.parse(JSON.stringify(nodes)) };
+    setCfg((c) => {
+      const cur = Array.isArray(c.skillPipeline?.templates) ? c.skillPipeline.templates : [];
+      const next = same ? cur.map((t) => (t.id === same.id ? tpl : t)) : [...cur, tpl];
+      return { ...c, skillPipeline: { ...(c.skillPipeline || {}), templates: next, template: tpl.id } };
+    });
+    setTplName('');
+    setSavingTpl(false);
+    toast.success((same ? '已覆盖模板「' : '已存为模板「') + name + '」，点「保存配置」后写入');
+  }
+
+  function deleteTemplate() {
+    if (!activeTpl || activeTpl.builtin) return;
+    setCfg((c) => ({ ...c, skillPipeline: { ...(c.skillPipeline || {}), templates: (c.skillPipeline?.templates || []).filter((t) => t.id !== activeTpl.id), template: '' } }));
+    toast.success('已删除模板「' + activeTpl.name + '」，点「保存配置」后生效（当前的技能排列不变）');
+  }
+
   // 恢复系统默认预设（对齐现有流水线的技能映射，见 lib/shared 的 SKILL_PIPELINE_NODES）。
   function resetDefaults() {
-    setCfg((c) => ({ ...c, skillPipeline: defaultSkillPipeline() }));
+    setCfg((c) => ({ ...c, skillPipeline: { ...defaultSkillPipeline(), templates: c.skillPipeline?.templates || [], template: 'builtin:default' } }));
     setHoverId('');
     setPinnedId('');
     toast.success('已恢复系统默认预设，保存后生效');
@@ -370,6 +426,55 @@ export default function SkillPipelinePanel({ cfg, setCfg, setSavedCfg, onlyNode 
         </div>
       </div>
 
+      {!onlyNode ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--line)] bg-black/15 px-3 py-2">
+          <span className="text-[11.5px] font-medium text-[var(--fg-2)]">编排模板</span>
+          <div className="min-w-[240px]">
+            <Select
+              value={activeTpl ? activeTpl.id : ''}
+              onChange={applyTemplate}
+              placeholder="选择模板（当前是手动编排）"
+              items={allTemplates.map((t) => ({ value: t.id, label: (t.builtin ? '内置 · ' : '') + t.name }))}
+              size="sm"
+            />
+          </div>
+          {tplDirty ? <span className="text-[11px] text-[var(--warning,#e0a84a)]">已改动，没另存</span> : null}
+          {savingTpl ? (
+            <>
+              <Input value={tplName} onChange={(e) => setTplName(e.target.value)} placeholder="模板名，如：3D 漫剧 · 豆包" className="h-8 w-52" onKeyDown={(e) => { if (e.key === 'Enter') saveAsTemplate(); }} />
+              <Button variant="primary" size="sm" onClick={saveAsTemplate}>保存</Button>
+              <Button variant="ghost" size="sm" onClick={() => setSavingTpl(false)}>取消</Button>
+            </>
+          ) : (
+            <Button variant="secondary" size="sm" onClick={() => { setTplName(activeTpl && !activeTpl.builtin ? activeTpl.name : ''); setSavingTpl(true); }}>把当前排列另存为模板</Button>
+          )}
+          {activeTpl && !activeTpl.builtin ? <Button variant="ghost" size="sm" onClick={deleteTemplate}>删除这个模板</Button> : null}
+          <span className="w-full text-[11px] text-[var(--fg-4)]">选一个模板就把下面的技能排列换成它；手动改完可以另存成自己的模板。下面编排里显示的就是出片时用的（停用 / 没装的技能会划掉、不会用）。</span>
+        </div>
+      ) : null}
+
+      {!onlyNode && effective ? (
+        <div className="rounded-lg border border-[var(--line)] bg-black/15 px-3 py-2 text-[11px] leading-relaxed text-[var(--fg-3)]">
+          <div className="mb-1 flex flex-wrap items-center gap-2">
+            <span className="font-medium text-[var(--fg-2)]">实际会用到的技能</span>
+            <span className="text-[var(--fg-4)]">按已保存的配置 + 技能库开关{effective.engine ? ' + 出片引擎「' + effective.engine.name + '」' : ''}算出来，改了编排要先「保存配置」再点刷新</span>
+            <button type="button" className="text-[var(--accent)]" onClick={loadEffective}>刷新</button>
+          </div>
+          {SKILL_PIPELINE_NODES.filter((n) => n.id !== 'novel').map((n) => {
+            const used = effective.nodes?.[n.id]?.skills || [];
+            return (
+              <div key={n.id} className="flex gap-2">
+                <span className="w-24 shrink-0 text-[var(--fg-4)]">{n.label}</span>
+                <span className={used.length ? 'text-[var(--fg-2)]' : 'text-[var(--danger)]'}>{used.length ? used.join(' → ') : '没有可用技能（由应用按内置规则处理）'}</span>
+              </div>
+            );
+          })}
+          {packMissing.length && packMissing.length < SEEDANCE_PACK_SKILLS.length + SEEDANCE_PACK_HELPERS.length ? (
+            <div className="mt-1 text-[var(--danger)]">爽剧技能包需要但没启用：{packMissing.join('、')}</div>
+          ) : null}
+        </div>
+      ) : null}
+
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-10 text-[12px] text-[var(--fg-3)]">
           <Spinner size={15} /> 加载技能清单…
@@ -472,8 +577,8 @@ export default function SkillPipelinePanel({ cfg, setCfg, setSavedCfg, onlyNode 
                       {list.slice(0, 4).map((s, idx) => (
                         <span
                           key={s + idx}
-                          title={s}
-                          className="flex h-3.5 w-3.5 items-center justify-center rounded-[4px] border border-[color-mix(in_srgb,var(--accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] font-mono text-[7.5px] uppercase text-[var(--accent)]"
+                          title={s + (statusOf(s) ? '（' + statusOf(s) + '）' : '')}
+                          className={'flex h-3.5 w-3.5 items-center justify-center rounded-[4px] border font-mono text-[7.5px] uppercase ' + (statusOf(s) ? 'border-[var(--line)] text-[var(--fg-4)] line-through' : 'border-[color-mix(in_srgb,var(--accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--accent)]')}
                         >
                           {String(s).replace(/^(sd|ai)-/, '').charAt(0)}
                         </span>
@@ -532,7 +637,8 @@ export default function SkillPipelinePanel({ cfg, setCfg, setSavedCfg, onlyNode 
                               <div key={s + idx} className="flex items-center gap-1 rounded-md border border-[var(--line)] bg-black/25 px-1.5 py-1">
                                 <span className="h-1 w-1 shrink-0 rounded-full bg-[color-mix(in_srgb,var(--accent)_70%,transparent)]" />
                                 <span className="flex min-w-0 flex-1 flex-col" title={descOf[s] || s}>
-                                  <span className="truncate font-mono text-[10.5px] text-[var(--fg-2)]">{s}</span>
+                                  <span className={'truncate font-mono text-[10.5px] ' + (statusOf(s) ? 'text-[var(--fg-4)] line-through' : 'text-[var(--fg-2)]')}>{s}</span>
+                                  {statusOf(s) ? <span className="truncate text-[9.5px] text-[var(--danger)]">{statusOf(s)}</span> : null}
                                   {skillMeta(s).zh ? <span className="truncate text-[9.5px] text-[var(--fg-4)]">{skillMeta(s).zh}</span> : null}
                                 </span>
                                 {skillMeta(s).mode === 'interactive' ? (
