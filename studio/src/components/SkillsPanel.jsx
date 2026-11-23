@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FileUp, RefreshCw, Sparkles } from 'lucide-react';
 import { api, uploadBinary } from '../lib/api.js';
-import { Badge, Button, EmptyState } from './ui.jsx';
+import { Badge, Button, EmptyState, Switch } from './ui.jsx';
 import { useToast } from './toast.jsx';
 
 export default function SkillsPanel() {
@@ -49,11 +49,21 @@ export default function SkillsPanel() {
     }
   }
 
+  async function toggle(names, enabled) {
+    try {
+      setSkills(await api.patch('/api/skills', { names, enabled }));
+    } catch (e) {
+      toast.error('切换失败：' + e.message);
+    }
+  }
+  const onCount = skills.filter((s) => s.enabled).length;
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[11px] text-[var(--fg-4)]">已安装 {skills.length} 个技能 · 全局，所有项目共用</span>
+        <span className="text-[11px] text-[var(--fg-4)]">已安装 {skills.length} 个技能，启用 {onCount} 个 · 全局，所有项目共用</span>
         <div className="flex items-center gap-2">
+          {skills.length ? <Button variant="ghost" size="sm" onClick={() => toggle(skills.map((s) => s.name), false)}>全部停用</Button> : null}
           <Button variant="secondary" size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
             <FileUp size={13} /> {uploading ? '上传中…' : '上传技能包（zip）'}
           </Button>
@@ -88,11 +98,13 @@ export default function SkillsPanel() {
               <Sparkles size={13} className="mt-0.5 shrink-0 text-[var(--fg-4)]" />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[12.5px] font-medium text-[var(--fg-2)]">{s.name}</span>
+                  <span className={'text-[12.5px] font-medium ' + (s.enabled ? 'text-[var(--fg-2)]' : 'text-[var(--fg-4)] line-through')}>{s.name}</span>
+                  {s.enabled ? null : <Badge tone="neutral">已停用</Badge>}
                   <Badge tone="neutral">{s.source}</Badge>
                 </div>
                 {s.description ? <p className="m-0 mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-[var(--fg-3)]">{s.description}</p> : null}
               </div>
+              <Switch checked={!!s.enabled} onChange={(v) => toggle([s.name], v)} label="" />
             </div>
           ))}
         </div>
@@ -101,7 +113,7 @@ export default function SkillsPanel() {
       )}
 
       <p className="m-0 text-[11px] leading-relaxed text-[var(--fg-4)]">
-        技能会扩展 Agent 在写剧本、分镜与提示词阶段的能力；上传的技能包会解压到 skills/ 目录。
+        技能会扩展 Agent 在写剧本、分镜与提示词阶段的能力；上传的技能包会解压到 skills/ 目录。停用的技能文件保留，Agent 看不到、流水线也不用，随时可以再打开。
       </p>
     </div>
   );

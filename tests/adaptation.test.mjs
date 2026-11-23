@@ -39,7 +39,7 @@ test('技能模式：画风选视觉档位；适配说明只讲接口（花括�
   assert.equal(visualTierOf('写实真人电影'), '真人电影档');
   assert.equal(visualTierOf('二次元三渲二'), '游戏内三渲二实机建模档');
   const t = buildSkillAdapter({ style: 'YHKT科幻国漫', styleDetailText: '', webSearch: false });
-  for (const k of ['{{林冬}}', '{{林冬的声音}}', 'Ref2VA', '不要停下来提问', 'update_shot', '左侧 1/3', 'lips remain completely closed']) assert.ok(t.includes(k), k);
+  for (const k of ['{{林冬}}', '{{林冬的声音}}', 'Ref2VA', '不要停下来提问', 'update_shot', '正面大头照', 'lips remain completely closed']) assert.ok(t.includes(k), k);
   assert.ok(!/30%|建立镜头|禁止硬切/.test(t));
 });
 
@@ -76,7 +76,10 @@ test('画风库：名字展开成风格关键词，自定义风格不展开', as
   assert.ok(STYLE_LIBRARY.length >= 12);
   assert.ok(styleDetail('YHKT科幻国漫').includes('3D'));
   assert.strictEqual(styleDetail('我自己写的风格'), '');
-  for (const s of STYLE_LIBRARY) assert.ok(fs.existsSync(new URL('../studio/public/styles/' + s.id + '.jpg', import.meta.url)), s.id + ' 缺预览图');
+  // 内置预览图：选择器里写死的那批必须有文件；新加的题材画风由用户在选择器里用自己的出图模型生成
+  const picker = fs.readFileSync(new URL('../studio/src/components/StylePicker.jsx', import.meta.url), 'utf8');
+  const builtin = JSON.parse('[' + /BUILTIN_PREVIEWS = new Set\(\[([^\]]*)\]/.exec(picker)[1].replace(/'/g, '"') + ']');
+  for (const id of builtin) assert.ok(fs.existsSync(new URL('../studio/public/styles/' + id + '.jpg', import.meta.url)), id + ' 缺预览图');
 });
 
 test('流式进度：模型长时间写一个工具参数时每 30 秒汇报一次已生成字数', async () => {
@@ -92,15 +95,19 @@ test('流式进度：模型长时间写一个工具参数时每 30 秒汇报一�
   assert.match(got[2], /1000 字符|900 字符/);
 });
 
-test('AIFISHER 路线人物图：三视图版式改写成「左栏全身 + 右栏特写 / 胸像」两栏', async () => {
-  const { rewriteSheetToStudio, studioCharacterLayout } = await import('../lib/agent/adaptation-rules.js');
-  const p = '竖版9:16人物设定图，纯白背景。画面左侧三分之一是一张极近面部特写：26岁女性。画面右侧三分之二从左到右并排同一人物的正面全身、侧面全身、背面全身三视图：身高170。固定着装：白衬衫。';
-  const out = rewriteSheetToStudio(p, studioCharacterLayout('refined', 'studio3d'));
-  assert.ok(!/三视图|三分之一|三分之二|设定图/.test(out.split('\n')[0]), out);
-  assert.match(out, /右栏是极近面部特写：26岁女性/);
-  assert.match(out, /左栏是同一人物的站立全身像：身高170/);
-  assert.match(out, /梦幻面部特写/);
-  assert.match(studioCharacterLayout('standard', 'studio3d'), /半身胸像/);
+test('人物图统一版式：删掉旧的左 1/3 特写 / 右 2/3 三视图 / 两栏，追加「上方大头照 + 下方无头三视图」', async () => {
+  const { applyCharacterSheet, SKILL_CHARACTER_SHEET_LAYOUT } = await import('../lib/agent/adaptation-rules.js');
+  const p = '竖版9:16人物设定图，纯白背景。画面左侧三分之一是一张极近面部特写。26岁女性，鹅蛋脸，杏眼。画面右侧三分之二从左到右并排同一人物的正面全身、侧面全身、背面全身三视图。白衬衫，黑色平底鞋。';
+  const out = applyCharacterSheet(p);
+  const body = out.split(SKILL_CHARACTER_SHEET_LAYOUT)[0];
+  assert.ok(!/三视图|三分之一|三分之二/.test(body), out);
+  assert.match(body, /26岁女性，鹅蛋脸，杏眼/);
+  assert.match(body, /白衬衫，黑色平底鞋/);
+  assert.ok(out.endsWith(SKILL_CHARACTER_SHEET_LAYOUT));
+  assert.match(SKILL_CHARACTER_SHEET_LAYOUT, /上方约 40% 区域为同一人物的正面大头照/);
+  assert.match(SKILL_CHARACTER_SHEET_LAYOUT, /不露头、下巴和面部/);
+  // 已经是新版式的不重复追加
+  assert.equal(applyCharacterSheet(out), out);
 });
 
 test('非写实画风：去写实词、画风锚点、视频画风锁', async () => {

@@ -223,18 +223,19 @@ test('导入插件 zip：拒绝越界路径，合法包装到用户目录', asyn
   await assert.rejects(core.installPluginZip(bad.toBuffer()), /id 不合法/);
 });
 
-test('Seedance 分镜按镜头顺序写，不写秒数；写实画风提醒人脸会被拦', () => {
-  assert.equal(seedanceShotLines('0-3秒｜近景｜固定镜头：甲看手机\n3.5s-6s｜中景：抬头'), '镜头1：近景，固定镜头：甲看手机\n镜头2：中景：抬头');
-  const t = stripSeedanceTimecodes('风格：3D\n0-4秒｜近景｜推近：甲\n4-9秒｜中景：乙\n声音：只说台词');
-  assert.match(t, /^风格：3D\n镜头1：近景，推近：甲\n镜头2：中景：乙\n声音：只说台词$/);
-  assert.equal(stripSeedanceTimecodes('镜头1：甲'), '镜头1：甲');
-  const lean = composeSeedancePrompt({ duration: 10, sub_shots: '0-5秒｜近景：甲' }, { aspect: '16:9' });
-  assert.match(lean, /镜头1：近景：甲/);
-  assert.match(lean, /时长：10秒$/);
-  assert.ok(!/0-5秒/.test(lean));
+test('Seedance 时间轴：sub_shots 铺满 15 秒；镜头N 写法出片前改成时段；写实画风提醒人脸会被拦', () => {
+  assert.equal(seedanceShotLines('0-3秒｜近景｜固定镜头：甲看手机\n3-6秒｜中景：抬头'), '0-3秒：近景，固定镜头：甲看手机\n3-6秒：中景：抬头');
+  assert.equal(seedanceShotLines('镜头1｜近景：甲\n镜头2：乙\n镜头3：丙\n镜头4：丁\n镜头5：戊'), '0-3秒：近景：甲\n3-6秒：乙\n6-9秒：丙\n9-12秒：丁\n12-15秒：戊');
+  const t = stripSeedanceTimecodes('风格：3D\n镜头1：甲\n镜头2：乙\n镜头3：丙\n声音：只说台词');
+  assert.match(t, /^风格：3D\n0-5秒：甲\n5-10秒：乙\n10-15秒：丙\n声音：只说台词$/);
+  assert.equal(stripSeedanceTimecodes('0-4秒：甲\n4-15秒：乙'), '0-4秒：甲\n4-15秒：乙');
+  const lean = composeSeedancePrompt({ duration: 15, sub_shots: '镜头1｜近景：甲\n镜头2：乙' }, { aspect: '16:9' });
+  assert.match(lean, /0-8秒：近景：甲\n8-15秒：乙/);
+  assert.match(lean, /时长：15秒$/);
   const engine = core.videoEngineInfo(cfgWith());
   assert.match(buildSkillAdapter({ style: '真人写实', engine }), /拦截写实真人脸/);
   assert.ok(!/拦截写实真人脸/.test(buildSkillAdapter({ style: '3D动画电影', engine })));
+  assert.match(buildSkillAdapter({ style: '3D动画电影', engine }), /0-3秒：<景别 \+ 运镜>/);
 });
 
 test('豆包插件：用户目录的令牌镜像过期时，按 manager_path.json 读画布助手目录里的真令牌', async () => {
@@ -350,7 +351,7 @@ test('选豆包插件后：保留 AIFISHER 流程条目、人物颜值规则、�
   const t = buildSkillAdapter({ style: '3D都市写实', aspect: '9:16', mainSkill: 'seedance-drama-prompt', flowSkill: 'minimax-drama-prompt', route: 'studio3d', installed: ['studio-assets-3d'], engine });
   assert.match(t, /一键下沉剧」五步流程/);
   assert.match(t, /6c\. 人物颜值/);
-  assert.match(t, /45–65 字且至少 3 句/);
+  assert.match(t, /45–65 字（约 4 字 \/ 秒）、至少 3 句/);
   assert.ok(t.indexOf('6b.') < t.indexOf('6c.'));
   const skill = fs.readFileSync(path.join(process.cwd(), 'skills/seedance-drama-prompt/SKILL.md'), 'utf8');
   assert.match(skill, /下沉短剧要快/);
@@ -558,4 +559,43 @@ test('豆包插件：参考图上传失败（没扣额度）→ 自动重提；�
     srv.close();
     delete process.env.IC_PLUGIN_POLL_MS;
   }
+});
+
+test('画风库：真人 / 3D 按题材细分，每个都有题材；预览图提示词带画风锚点和题材场景', async () => {
+  const { STYLE_LIBRARY, styleFamily, styleIsCartoon } = await import('../lib/shared/index.js');
+  const vis = STYLE_LIBRARY.filter((s) => !s.hidden);
+  assert.ok(vis.filter((s) => s.family === 'realistic').length >= 10);
+  assert.ok(vis.filter((s) => s.family === '3d').length >= 14);
+  for (const s of vis) assert.ok(s.genre, s.name + ' 缺题材');
+  assert.equal(styleFamily('3D家庭伦理'), '3d');
+  assert.equal(styleIsCartoon('3D甜宠恋爱'), false);
+  assert.equal(styleFamily('家庭伦理'), 'realistic');
+  assert.equal(new Set(vis.map((s) => s.name)).size, vis.length, '画风名不能重复');
+  const p = core.stylePreviewPrompt(STYLE_LIBRARY.find((s) => s.id === '3d-family'));
+  assert.match(p, /^画风：3D家庭伦理，次世代三维 CG/);
+  assert.match(p, /家庭客厅/);
+});
+
+test('技能库：停用的技能 Agent 看不到，重新扫描不把开关打回来', async () => {
+  const se = await import('../lib/agent/skill-engine.js');
+  se.scanSkills();
+  const all = se.listSkills().map((x) => x.name);
+  assert.ok(all.includes('seedance-drama-prompt'));
+  const cur = core.Skills.getByName('seedance-drama-prompt');
+  core.Skills.upsert({ ...cur, enabled: false });
+  se.scanSkills();
+  assert.equal(core.Skills.getByName('seedance-drama-prompt').enabled, false);
+  assert.ok(!se.listSkills().map((x) => x.name).includes('seedance-drama-prompt'));
+  assert.ok(se.listSkills({ includeDisabled: true }).map((x) => x.name).includes('seedance-drama-prompt'));
+  core.Skills.upsert({ ...core.Skills.getByName('seedance-drama-prompt'), enabled: true });
+});
+
+test('装了 Seedance 爽剧技能包：流水线各环节改用包里的技能', async () => {
+  const { effectiveNodeSkills } = await import('../lib/agent/agent-loop.js');
+  const installed = ['drama-script', 'script-brief', 'drama-shot-prompt', 'seedance-storyboard-generator', 'seedance-prompts-skill', 'seedance-prompt-zh', 'seedance-drama-prompt', 'novel-adaptation'];
+  const r = effectiveNodeSkills(null, installed, { style: '3D家庭伦理' }, { promptStyle: 'seedance', durations: [15] });
+  assert.equal(r.nodes.pipeline.skills[0], 'drama-shot-prompt');
+  assert.deepEqual(r.nodes.video_prompt.skills.slice(0, 3), ['seedance-storyboard-generator', 'seedance-prompts-skill', 'seedance-prompt-zh']);
+  assert.equal(r.nodes.script.skills[0], 'drama-script');
+  assert.ok(!r.nodes.storyboard.skills.includes('seedance-drama-prompt'));
 });

@@ -1,25 +1,48 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import clsx from 'clsx';
-import { Check } from 'lucide-react';
+import { Check, ImagePlus } from 'lucide-react';
 import { STYLE_LIBRARY } from '@shared';
-import { Input } from './ui.jsx';
+import { Input, Spinner } from './ui.jsx';
+import { api } from '../lib/api.js';
 
 // 画风选择：带预览图的卡片网格。预览图在 studio/public/styles/<id>.jpg，同一个画面用各画风各出一张，方便对比。
 // value 是画风名（库里的名字或自定义文本）；'' = 不指定。
 const GROUPS = [
   { id: 'realistic', label: '真人' },
-  { id: '3d', label: '3D（次世代 / 国漫 / 卡通）' },
+  { id: '3d', label: '3D 漫剧（写实比例 3D / 国漫 / 卡通）' },
 ];
+// 内置预览图（studio/public/styles/<id>.jpg）的画风；其余的用「生成预览图」用自己的出图模型出
+const BUILTIN_PREVIEWS = new Set(['real', 'costume-real', 'hk-film', 'wasteland', 'urban-drama', 'nextgen-3d', 'urban-3d', 'yhkt', 'guoman-3d', 'pixar', 'cyberpunk', 'guoman-2d', 'anime-jp', 'anime', 'cartoon', 'chibi', 'ink', 'comic', 'painterly']);
 
 export default function StylePicker({ value, onChange, allowNone = true }) {
   const inLib = STYLE_LIBRARY.some((s) => s.name === value);
   const [custom, setCustom] = useState(!!value && !inLib);
   const base = import.meta.env.BASE_URL || '/';
+  const [generated, setGenerated] = useState(() => new Set());
+  const [ver, setVer] = useState(0);
+  const [gen, setGen] = useState({ busy: false, done: 0, total: 0, err: '' });
+  const loadGenerated = useCallback(() => api.get('/api/styles/preview').then((r) => setGenerated(new Set(r.ids || []))).catch(() => {}), []);
+  useEffect(() => { loadGenerated(); }, [loadGenerated]);
+  const visible = STYLE_LIBRARY.filter((s) => !s.hidden);
+  const missing = visible.filter((s) => !BUILTIN_PREVIEWS.has(s.id) && !generated.has(s.id));
+  const srcOf = (s) => (generated.has(s.id) ? '/api/styles/preview/' + s.id + '?v=' + ver : base + 'styles/' + s.id + '.jpg');
+  async function generateMissing(list) {
+    setGen({ busy: true, done: 0, total: list.length, err: '' });
+    let err = '';
+    for (let k = 0; k < list.length; k++) {
+      try { await api.post('/api/styles/preview', { id: list[k].id }); } catch (e) { err = list[k].name + '：' + e.message; }
+      setGen({ busy: true, done: k + 1, total: list.length, err });
+      await loadGenerated();
+      setVer((v) => v + 1);
+    }
+    setGen({ busy: false, done: list.length, total: list.length, err });
+  }
   return (
     <div className="flex flex-col gap-2.5">
       {GROUPS.map((g) => {
         // 二维画风已隐藏；老项目正在用的那个仍然显示，方便看到当前选择
-        const list = STYLE_LIBRARY.filter((s) => (g.id === 'realistic' ? s.family === 'realistic' : s.family !== 'realistic') && (!s.hidden || s.name === value));
+        const list = STYLE_LIBRARY.filter((s) => (g.id === 'realistic' ? s.family === 'realistic' : s.family !== 'realistic') && (!s.hidden || s.name === value))
+          .map((s, k) => [s, k]).sort((a, b) => String(a[0].genre || '').localeCompare(String(b[0].genre || ''), 'zh') || a[1] - b[1]).map((x) => x[0]);
         if (!list.length) return null;
         return (
       <div key={g.id} className="flex flex-col gap-1.5">
@@ -41,7 +64,7 @@ export default function StylePicker({ value, onChange, allowNone = true }) {
               )}
             >
               <img
-                src={base + 'styles/' + s.id + '.jpg'}
+                src={srcOf(s)}
                 alt={s.name}
                 loading="lazy"
                 className="aspect-video w-full bg-[var(--panel-2)] object-cover"
@@ -54,7 +77,7 @@ export default function StylePicker({ value, onChange, allowNone = true }) {
               ) : null}
               <span className="block px-2 py-1.5">
                 <span className={clsx('block truncate text-[12px] font-medium', active ? 'text-[var(--accent)]' : 'text-[var(--fg-2)]')}>{s.name}</span>
-                <span className="block truncate text-[10.5px] text-[var(--fg-4)]">{s.desc}</span>
+                <span className="block truncate text-[10.5px] text-[var(--fg-4)]">{s.genre ? s.genre + ' · ' : ''}{s.desc}</span>
               </span>
             </button>
           );
@@ -63,6 +86,15 @@ export default function StylePicker({ value, onChange, allowNone = true }) {
       </div>
         );
       })}
+      {missing.length || gen.busy ? (
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--fg-4)]">
+          <button type="button" disabled={gen.busy} onClick={() => generateMissing(missing)} className="inline-flex items-center gap-1 rounded-full border border-[var(--line)] px-2.5 py-1 text-[var(--fg-3)] hover:border-[var(--line-strong)] disabled:opacity-60">
+            {gen.busy ? <Spinner size={11} /> : <ImagePlus size={12} />} {gen.busy ? '生成预览图 ' + gen.done + '/' + gen.total : '给 ' + missing.length + ' 个没有预览图的画风生成预览'}
+          </button>
+          <span>用你设置里的文生图模型出，每张算一次出图。</span>
+          {gen.err ? <span className="text-[var(--danger)]">{gen.err}</span> : null}
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center gap-1.5">
         {allowNone ? (
           <Chip active={!custom && !value} onClick={() => { setCustom(false); onChange(''); }}>不指定（由 AI 按题材选）</Chip>

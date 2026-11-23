@@ -112,7 +112,8 @@ export default function SkillPipelinePanel({ cfg, setCfg, setSavedCfg, onlyNode 
   const loadSkills = useCallback(() => {
     api
       .get('/api/skills')
-      .then(setSkills)
+      // 技能库里停用的不出现在编排的可选列表里
+      .then((list) => setSkills((list || []).filter((s) => s.enabled !== false)))
       .catch((e) => toast.error(e.message))
       .finally(() => setLoading(false));
   }, []);
