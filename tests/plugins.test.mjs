@@ -561,19 +561,50 @@ test('豆包插件：参考图上传失败（没扣额度）→ 自动重提；�
   }
 });
 
-test('画风库：真人 / 3D 按题材细分，每个都有题材；预览图提示词带画风锚点和题材场景', async () => {
-  const { STYLE_LIBRARY, styleFamily, styleIsCartoon } = await import('../lib/shared/index.js');
-  const vis = STYLE_LIBRARY.filter((s) => !s.hidden);
-  assert.ok(vis.filter((s) => s.family === 'realistic').length >= 10);
-  assert.ok(vis.filter((s) => s.family === '3d').length >= 14);
-  for (const s of vis) assert.ok(s.genre, s.name + ' 缺题材');
-  assert.equal(styleFamily('3D家庭伦理'), '3d');
-  assert.equal(styleIsCartoon('3D甜宠恋爱'), false);
-  assert.equal(styleFamily('家庭伦理'), 'realistic');
-  assert.equal(new Set(vis.map((s) => s.name)).size, vis.length, '画风名不能重复');
-  const p = core.stylePreviewPrompt(STYLE_LIBRARY.find((s) => s.id === '3d-family'));
-  assert.match(p, /^画风：3D家庭伦理，次世代三维 CG/);
+test('风格预设：结构化（视频前置词 + 渲染词），旧画风只留改写过的，白昼技能包画风按文件注册', async () => {
+  const sh = await import('../lib/shared/index.js');
+  const vis = sh.STYLE_LIBRARY.filter((s) => !s.hidden);
+  assert.equal(vis[0].name, '不附加风格');
+  for (const s of vis.filter((x) => !x.none)) {
+    assert.ok(s.video && s.character && s.scene && s.prop, s.name + ' 缺结构化字段');
+    assert.ok(s.fit, s.name + ' 缺适配说明');
+  }
+  for (const n of ['东方玄幻-3D', '女频偶像言情-3D', '古风柔光-真人', '诡异规则-3D', '电影级风格化-3D渲2D', '3D都市写实', '都市短剧']) assert.ok(vis.some((s) => s.name === n), n);
+  assert.ok(sh.STYLE_LIBRARY.find((s) => s.name === '复古港风').hidden, '没改写的旧画风隐藏');
+  assert.equal(sh.styleAnchor('不附加风格'), '');
+  assert.match(sh.styleRender('3D都市写实', 'scene'), /都市场景/);
+  assert.match(sh.styleVideoPrefix('古风柔光-真人'), /禁止输出字幕/);
+  const { parseBundleStyles } = await import('../lib/agent/style-registry.js');
+  const md = ['## 一、总览', '| 风格 ID | 名称 | 说明 | a | b | c | d | 道具提示词 |', '|---|---|---|---|---|---|---|---|',
+    '| `korean-3d` | **半写实3DCG** | — | 1 | 2 | 3 | 4 | 3DCG风格物品图，使用空白背景 |',
+    '| `style-b98` | **韩系2.5D** | — | 1 | 2 | 3 | 4 | 3DCG风格物品图 |',
+    '## 二、视频', '### 半写实3DCG（`korean-3d`）', '```text', '视频前置A', '```', '### 韩系2.5D（`style-b98`）', '> 与「**半写实3DCG**」完全一致。',
+    '## 三、渲染', '### 半写实3DCG（`korean-3d`）', '**角色风格渲染词**：', '```text', '角色A', '```', '**场景风格渲染词**：', '```text', '场景A', '```',
+    '### 韩系2.5D（`style-b98`）', '**角色风格渲染词**：', '```text', '角色B', '```', '**场景风格渲染词**：', '```text', '场景B', '```', '## 四、长版'].join('\n');
+  const l = parseBundleStyles(md);
+  assert.equal(l.length, 2);
+  assert.deepEqual([l[0].video, l[0].character, l[0].scene, l[0].kind], ['视频前置A', '角色A', '场景A', '3D']);
+  assert.deepEqual([l[1].video, l[1].character, l[1].kind], ['视频前置A', '角色B', '2.5D']);
+  sh.registerStylePresets(l);
+  assert.equal(sh.styleVideoPrefix('韩系2.5D'), '视频前置A');
+  const p = core.stylePreviewPrompt(sh.STYLE_LIBRARY.find((s) => s.name === '3D家庭伦理'));
   assert.match(p, /家庭客厅/);
+});
+
+test('分镜模式：项目选白昼 Lite 时 storyboard-lite 排到雷霆导演前面', async () => {
+  const sh = await import('../lib/shared/index.js');
+  const { effectiveNodeSkills } = await import('../lib/agent/agent-loop.js');
+  const pipe = sh.baizhouPackPipeline(sh.defaultSkillPipeline());
+  const inst = [...sh.BAIZHOU_PACK_SKILLS, ...sh.BAIZHOU_PACK_HELPERS];
+  assert.equal(effectiveNodeSkills(pipe, inst, { style: 'x' }, null).nodes.pipeline.skills[0], 'short-drama-thunder-director');
+  assert.equal(effectiveNodeSkills(pipe, inst, { style: 'x', storyboard_mode: 'lite' }, null).nodes.pipeline.skills[0], 'short-drama-storyboard-lite');
+});
+
+test('风格预设项目：适配规则让 Agent 不写风格词', async () => {
+  const { buildSkillAdapter } = await import('../lib/agent/adaptation-rules.js');
+  const t = buildSkillAdapter({ style: '东方玄幻-3D', engine: { promptStyle: 'seedance', durations: [15] } });
+  assert.match(t, /2\. 画风：项目风格「东方玄幻-3D」是风格预设/);
+  assert.ok(!/风格：<项目画风一句>/.test(t));
 });
 
 test('技能库：停用的技能 Agent 看不到，重新扫描不把开关打回来', async () => {

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { loadConfig, generateStylePreview, listGeneratedPreviews } from '@/lib/core/index.js';
+import { ensureSkillStyles } from '@/lib/agent/style-registry.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +14,7 @@ export async function POST(req) {
   const body = await req.json().catch(() => ({}));
   if (!body?.id) return NextResponse.json({ error: '缺少画风 id' }, { status: 400 });
   try {
+    ensureSkillStyles();
     await generateStylePreview(loadConfig(), String(body.id));
     return NextResponse.json({ ok: true, id: body.id });
   } catch (e) {

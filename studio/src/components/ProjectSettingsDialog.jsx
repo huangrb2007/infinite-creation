@@ -5,7 +5,7 @@ import { STYLE_CUSTOM, resolveStyle, splitStyle, VIDEO_RESOLUTION_CUSTOM } from 
 import StylePicker from './StylePicker.jsx';
 import { RESOLUTION_SELECT_ITEMS, RATIO_SELECT_ITEMS } from './visuals.jsx';
 import { Button, Field, Input, Segmented, Select, Switch } from './ui.jsx';
-import { styleFamily } from '@shared';
+import { styleFamily, findStyle } from '@shared';
 import { FormSection, Modal } from './overlays.jsx';
 import { useToast } from './toast.jsx';
 
@@ -23,6 +23,7 @@ export default function ProjectSettingsDialog({ open, onOpenChange, project, onS
   const [autoScript, setAutoScript] = useState(true);
   const [charStyle, setCharStyle] = useState('standard');
   const [assetEngine, setAssetEngine] = useState('');
+  const [sbMode, setSbMode] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -39,6 +40,7 @@ export default function ProjectSettingsDialog({ open, onOpenChange, project, onS
     setEnableSub(project.enable_subtitles !== false);
     setAutoScript(project.auto_script !== false);
     setCharStyle(project.character_style === 'refined' ? 'refined' : 'standard');
+    setSbMode(project.storyboard_mode === 'lite' ? 'lite' : '');
     setAssetEngine(project.asset_engine === 'gpt3d' ? 'gpt3d' : '');
   }, [open, project]);
 
@@ -57,6 +59,7 @@ export default function ProjectSettingsDialog({ open, onOpenChange, project, onS
         auto_script: autoScript,
         character_style: charStyle,
         asset_engine: assetEngine,
+        storyboard_mode: sbMode,
       });
       toast.success('项目设置已保存');
       onOpenChange(false);
@@ -94,7 +97,11 @@ export default function ProjectSettingsDialog({ open, onOpenChange, project, onS
           <Field label="画面风格">
             <StylePicker value={resolveStyle(styleSel, customStyle)} onChange={(v) => { const sp = splitStyle(v); setStyleSel(v ? (sp.sel || STYLE_CUSTOM) : ''); setCustomStyle(sp.sel === STYLE_CUSTOM || !sp.sel ? v : ''); }} />
           </Field>
-          {styleFamily(resolveStyle(styleSel, customStyle)) === '3d' ? (
+          <Field label="分镜模式" hint="只在流水线编排选了「白昼短剧」模板时生效：雷霆导演 = 快节奏对话、强运镜、强情绪；白昼 Lite = 平稳日常、温情戏。另一个留作断流续写和漏词修复。">
+            <Segmented value={sbMode} onChange={setSbMode} options={[{ value: '', label: '雷霆导演（高冲突）' }, { value: 'lite', label: '白昼 Lite（平稳）' }]} />
+          </Field>
+          {/* 3D 资产细分选项只对没有结构化预设的老 3D 画风有用；风格预设的出图渲染词由软件统一加 */}
+          {styleFamily(resolveStyle(styleSel, customStyle)) === '3d' && findStyle(resolveStyle(styleSel, customStyle)) && !findStyle(resolveStyle(styleSel, customStyle))?.video ? (
             <div className="grid grid-cols-2 gap-3">
               <Field label="人物风格（3D 漫剧）" hint={charStyle === 'refined' ? '梦幻面部特写，厚涂琉璃质感' : '海报感半身像，戏剧光'}>
                 <Segmented value={charStyle} onChange={setCharStyle} options={[{ value: 'standard', label: '普通风格' }, { value: 'refined', label: '精致风格' }]} />
