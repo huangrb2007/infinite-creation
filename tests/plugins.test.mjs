@@ -665,3 +665,15 @@ test('白昼短剧模板：7 件套 + 声线 / 配乐技能，视频提示词用
   assert.ok(!/0-3秒：<景别/.test(t));
   assert.equal(sh.seedancePackPipeline(sh.defaultSkillPipeline()).promptFormat, 'timeline');
 });
+
+test('Seedance：台词集中在最后【声音】块会被退回（实测开头一两句被吞），写在镜头下面的放过', async () => {
+  const { strandedVoiceLines, buildSkillAdapter } = await import('../lib/agent/adaptation-rules.js');
+  const bad = '【场景】{{小区院内}}\nSHOT 1: 推近：林冬扶着车\nSHOT 2: 跟拍：刘美娟拦住\n【声音】\n刘美娟（现场对白）：{林冬，我怀孕了！}\n林冬（现场对白）：{哦，那恭喜你了！}\n<拖鞋蹭响>';
+  assert.equal(strandedVoiceLines(bad).length, 2);
+  const good = 'SHOT 1: 推近：刘美娟拦住车，开口说\n刘美娟（现场对白）：{林冬，我怀孕了！}\nSHOT 2: 反打：林冬发懵\n林冬（现场对白）：{哦，那恭喜你了！}';
+  assert.deepEqual(strandedVoiceLines(good), []);
+  const tl = '0-3秒：刘美娟开口说：“林冬，我怀孕了！”\n3-6秒：林冬说：“哦，那恭喜你了！”\n声音：只生成台词和音效，不要背景音乐。';
+  assert.deepEqual(strandedVoiceLines(tl), []);
+  const t = buildSkillAdapter({ style: '3D都市写实', engine: { promptStyle: 'seedance', durations: [15] }, promptFormat: 'x20' });
+  assert.match(t, /不要集中到最后一个【声音】块/);
+});
