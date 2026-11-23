@@ -23,7 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import { api, uploadBinary } from '../lib/api.js';
-import { SKILL_PIPELINE_NODES, defaultSkillPipeline, skillMeta, SKILL_MODE_LABEL, seedancePackPipeline, SEEDANCE_PACK_SKILLS, SEEDANCE_PACK_HELPERS } from '@shared';
+import { SKILL_PIPELINE_NODES, defaultSkillPipeline, skillMeta, SKILL_MODE_LABEL, seedancePackPipeline, SEEDANCE_PACK_SKILLS, SEEDANCE_PACK_HELPERS, baizhouPackPipeline, BAIZHOU_PACK_SKILLS, BAIZHOU_PACK_HELPERS } from '@shared';
 import { Button, Input, SearchInput, Select, Spinner, Switch } from './ui.jsx';
 import { useToast } from './toast.jsx';
 
@@ -239,14 +239,16 @@ export default function SkillPipelinePanel({ cfg, setCfg, setSavedCfg, onlyNode 
   // 内置两份（系统默认 / Seedance 爽剧技能包），其余是用户「另存为模板」存的，放在 cfg.skillPipeline.templates
   const sp = cfg.skillPipeline || {};
   const userTemplates = Array.isArray(sp.templates) ? sp.templates : [];
+  // make() 返回 { nodes, promptFormat }：promptFormat = 视频提示词写法（timeline 时间轴 / x20 白昼分镜组）
   const BUILTIN_TEMPLATES = [
-    { id: 'builtin:seedance-pack', name: 'Seedance 爽剧技能包（豆包 / 即梦出片）', builtin: true, make: () => seedancePackPipeline({ nodes: nodes }).nodes, needs: SEEDANCE_PACK_SKILLS.concat(SEEDANCE_PACK_HELPERS) },
-    { id: 'builtin:default', name: '系统默认', builtin: true, make: () => defaultSkillPipeline().nodes, needs: [] },
+    { id: 'builtin:baizhou', name: '白昼短剧（雷霆导演 X20 分镜）', builtin: true, make: () => { const p = baizhouPackPipeline({ nodes }); return { nodes: p.nodes, promptFormat: p.promptFormat }; }, needs: BAIZHOU_PACK_SKILLS.concat(BAIZHOU_PACK_HELPERS) },
+    { id: 'builtin:seedance-pack', name: 'Seedance 爽剧技能包（15 秒时间轴）', builtin: true, make: () => { const p = seedancePackPipeline({ nodes }); return { nodes: p.nodes, promptFormat: p.promptFormat }; }, needs: SEEDANCE_PACK_SKILLS.concat(SEEDANCE_PACK_HELPERS) },
+    { id: 'builtin:default', name: '系统默认', builtin: true, make: () => ({ nodes: defaultSkillPipeline().nodes, promptFormat: '' }), needs: [] },
   ];
-  const allTemplates = [...BUILTIN_TEMPLATES, ...userTemplates.map((t) => ({ ...t, make: () => JSON.parse(JSON.stringify(t.nodes || {})) }))];
+  const allTemplates = [...BUILTIN_TEMPLATES, ...userTemplates.map((t) => ({ ...t, make: () => ({ nodes: JSON.parse(JSON.stringify(t.nodes || {})), promptFormat: t.promptFormat || '' }) }))];
   const activeTpl = allTemplates.find((t) => t.id === sp.template) || null;
   const pickNodes = (n) => JSON.stringify(Object.fromEntries(SKILL_PIPELINE_NODES.map((m) => [m.id, (n?.[m.id]?.skills) || []])));
-  const tplDirty = !!activeTpl && pickNodes(activeTpl.make()) !== pickNodes(nodes);
+  const tplDirty = !!activeTpl && pickNodes(activeTpl.make().nodes) !== pickNodes(nodes);
   const [tplName, setTplName] = useState('');
   const [savingTpl, setSavingTpl] = useState(false);
 
@@ -254,7 +256,8 @@ export default function SkillPipelinePanel({ cfg, setCfg, setSavedCfg, onlyNode 
     const t = allTemplates.find((x) => x.id === id);
     if (!t) return;
     const missing = (t.needs || []).filter((n) => !enabledSet.has(n));
-    setCfg((c) => ({ ...c, skillPipeline: { ...(c.skillPipeline || {}), useSkills: true, nodes: t.make(), template: t.id } }));
+    const made = t.make();
+    setCfg((c) => ({ ...c, skillPipeline: { ...(c.skillPipeline || {}), useSkills: true, nodes: made.nodes, promptFormat: made.promptFormat || '', template: t.id } }));
     setHoverId('');
     setPinnedId('');
     if (missing.length) toast.error('已切到「' + t.name + '」，但这些技能还没导入或停用了：' + missing.join('、') + '（先到「技能库」导入 / 打开）');
@@ -265,7 +268,7 @@ export default function SkillPipelinePanel({ cfg, setCfg, setSavedCfg, onlyNode 
     const name = tplName.trim();
     if (!name) { toast.error('先写模板名'); return; }
     const same = userTemplates.find((t) => t.name === name);
-    const tpl = { id: same ? same.id : 'tpl-' + Date.now().toString(36), name, nodes: JSON.parse(JSON.stringify(nodes)) };
+    const tpl = { id: same ? same.id : 'tpl-' + Date.now().toString(36), name, nodes: JSON.parse(JSON.stringify(nodes)), promptFormat: sp.promptFormat || '' };
     setCfg((c) => {
       const cur = Array.isArray(c.skillPipeline?.templates) ? c.skillPipeline.templates : [];
       const next = same ? cur.map((t) => (t.id === same.id ? tpl : t)) : [...cur, tpl];
@@ -284,7 +287,7 @@ export default function SkillPipelinePanel({ cfg, setCfg, setSavedCfg, onlyNode 
 
   // 恢复系统默认预设（对齐现有流水线的技能映射，见 lib/shared 的 SKILL_PIPELINE_NODES）。
   function resetDefaults() {
-    setCfg((c) => ({ ...c, skillPipeline: { ...defaultSkillPipeline(), templates: c.skillPipeline?.templates || [], template: 'builtin:default' } }));
+    setCfg((c) => ({ ...c, skillPipeline: { ...defaultSkillPipeline(), promptFormat: '', templates: c.skillPipeline?.templates || [], template: 'builtin:default' } }));
     setHoverId('');
     setPinnedId('');
     toast.success('已恢复系统默认预设，保存后生效');
@@ -439,6 +442,7 @@ export default function SkillPipelinePanel({ cfg, setCfg, setSavedCfg, onlyNode 
             />
           </div>
           {tplDirty ? <span className="text-[11px] text-[var(--warning,#e0a84a)]">已改动，没另存</span> : null}
+          <span className="text-[11px] text-[var(--fg-4)]">视频提示词写法：{sp.promptFormat === 'x20' ? 'X20 分镜组（白昼）' : sp.promptFormat === 'timeline' ? '15 秒时间轴' : '默认'}</span>
           {savingTpl ? (
             <>
               <Input value={tplName} onChange={(e) => setTplName(e.target.value)} placeholder="模板名，如：3D 漫剧 · 豆包" className="h-8 w-52" onKeyDown={(e) => { if (e.key === 'Enter') saveAsTemplate(); }} />

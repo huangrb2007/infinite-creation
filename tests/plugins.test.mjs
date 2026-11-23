@@ -609,3 +609,28 @@ test('「套用 Seedance 爽剧技能包」预设：编排里写的就是运行�
   const r = effectiveNodeSkills(pipe, installed, { style: '3D家庭伦理' }, { promptStyle: 'seedance', durations: [15] });
   for (const [id, list] of Object.entries(sh.SEEDANCE_PACK_NODES)) assert.deepEqual(r.nodes[id].skills, list, id);
 });
+
+test('台词照原文核对：语序被改反（你给我 → 我给你）退回，删字 / 繁转简放过', async () => {
+  const { lineMismatches, inSource, normText } = await import('../lib/agent/line-check.js');
+  const src = ('女人頓時眼眶就紅了：“渣男，你上個月給我送過一瓶洗髮露，我洗完頭之後姨媽就不來了，今天查出來懷孕，還說跟你沒關係？”林冬：？？？你踏馬敢不敢再離譜一點？').repeat(2);
+  const bad = lineMismatches('陈丽（眼眶发红）：渣男！上个月我给你送过一瓶洗发露，今天查出怀孕，还说没关系？\n林冬（内心OS）：你踏马敢不敢再离谱一点？\n旁白：她哭着追了上去。\n陈丽：渣男，你上个月给我送过一瓶洗发露，今天查出来怀孕，还说跟你没关系？', src);
+  assert.equal(bad.length, 1);
+  assert.match(bad[0].line, /上个月我给你/);
+  assert.match(bad[0].original, /你上个月给我送过一瓶洗发露/);
+  assert.ok(inSource('渣男，你上个月给我送过一瓶洗发露', normText(src)));
+});
+
+test('白昼短剧模板：7 件套 + 声线 / 配乐技能，视频提示词用 X20 分镜组，不改成时间轴', async () => {
+  const sh = await import('../lib/shared/index.js');
+  const { effectiveNodeSkills } = await import('../lib/agent/agent-loop.js');
+  const { buildSkillAdapter } = await import('../lib/agent/adaptation-rules.js');
+  const pipe = sh.baizhouPackPipeline(sh.defaultSkillPipeline());
+  assert.equal(pipe.promptFormat, 'x20');
+  const r = effectiveNodeSkills(pipe, [...sh.BAIZHOU_PACK_SKILLS, ...sh.BAIZHOU_PACK_HELPERS], { style: '3D家庭伦理' }, { promptStyle: 'seedance', durations: [15] });
+  assert.equal(r.nodes.pipeline.skills[0], 'short-drama-thunder-director');
+  assert.deepEqual(r.nodes.storyboard.skills, ['short-drama-thunder-director', 'short-drama-storyboard-lite']);
+  const t = buildSkillAdapter({ style: '3D家庭伦理', engine: { promptStyle: 'seedance', durations: [15] }, promptFormat: 'x20' });
+  assert.match(t, /X20 的一个分镜组正文/);
+  assert.ok(!/0-3秒：<景别/.test(t));
+  assert.equal(sh.seedancePackPipeline(sh.defaultSkillPipeline()).promptFormat, 'timeline');
+});
